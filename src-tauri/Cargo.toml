@@ -1,0 +1,27 @@
+[package]
+name = "znote"
+version = "0.1.0"
+description = "A personal text and Markdown editor"
+authors = ["zNote"]
+edition = "2021"
+
+[lib]
+name = "znote_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+encoding_rs = "0.8"
+sha2 = "0.10"
+tempfile = "3"
+
+tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

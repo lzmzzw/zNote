@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"main","description":"主编辑器最小权限","windows":["main"],"permissions":["core:default","core:window:allow-close","core:window:allow-destroy"]}
