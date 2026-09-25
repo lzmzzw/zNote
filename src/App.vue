@@ -10,7 +10,7 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, syntaxTree 
 import { oneDark } from '@codemirror/theme-one-dark';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { FilePlus2, FolderOpen, Save, Search, Moon, Sun, PanelLeftClose, PanelLeft, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Undo2, Redo2, NotebookPen } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, Moon, Sun, PanelLeftClose, PanelLeft, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Undo2, Redo2, NotebookPen } from 'lucide-vue-next';
 import { renderMarkdown } from './preview';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
@@ -24,6 +24,7 @@ const status = ref('准备就绪'); const busy = ref(false); const position = re
 const preview = ref(''); const headings = ref<{ title: string; from: number; level: number }[]>([]);
 const theme = new Compartment(); const language = new Compartment(); const live = new Compartment();
 const large = computed(() => (active.value?.state.doc.length ?? 0) > 1_000_000);
+const canExport = computed(() => !busy.value && !large.value && /\.md$|\.markdown$/i.test(active.value?.name ?? ''));
 let refreshTimer: ReturnType<typeof setTimeout>; let recoveryTimer: ReturnType<typeof setTimeout>;
 let worker: Worker; let formatId = 0; let pendingFormat: { id: number; note: Note; version: number } | undefined;
 let recoveryWrite: Promise<unknown> = Promise.resolve();
@@ -88,6 +89,26 @@ async function saveNote(note = active.value, saveAs = false): Promise<boolean> {
     Object.assign(note, { path: doc.path, encoding: changedDuringSave ? note.encoding : doc.encoding, bom: changedDuringSave ? note.bom : doc.bom, lineEnding: changedDuringSave ? note.lineEnding : doc.lineEnding, revision: doc.revision, saved: text, name: doc.path?.split(/[\\/]/).pop() ?? note.name, metaDirty: changedDuringSave && note.metaDirty, dirty: changedDuringSave && note.metaDirty || note.state.doc.toString() !== text }); touch(); reconfigure(); status.value = '已保存到本机'; scheduleRecovery(); if (note.dirty) { status.value = '保存期间有新修改，请再次保存'; return false; } return true;
   } catch (e) { status.value = String(e); return false; } finally { busy.value = false; }
 }
+async function exportNote(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  const format = select.value as 'docx' | 'pdf';
+  select.value = '';
+  const note = active.value;
+  if (!note || !canExport.value || !native || !['docx', 'pdf'].includes(format)) {
+    status.value = native ? '仅支持导出 100 万字符以内的 Markdown 文档' : '请使用桌面版导出本地文件';
+    return;
+  }
+  const text = note.state.doc.toString();
+  busy.value = true;
+  status.value = `正在生成 ${format.toUpperCase()}…`;
+  try {
+    const { exportMarkdown } = await import('./export');
+    const bytes = await exportMarkdown(text, format);
+    const saved = await invoke<boolean>('native_export', { name: note.name, format, bytes: Array.from(bytes) });
+    status.value = saved ? `已导出 ${format.toUpperCase()} 到本机` : '已取消导出';
+  } catch (error) { status.value = `导出失败：${error}`; }
+  finally { busy.value = false; }
+}
 function requestClose(note: Note) { if (note.dirty) closePrompt.value = { kind: 'tab', note }; else removeNote(note); }
 function removeNote(note: Note) { notes.value = notes.value.filter(n => n.id !== note.id); if (!notes.value.length) createNote(); else if (activeId.value === note.id) selectNote(notes.value[0]); scheduleRecovery(); }
 async function resolveClose(action: 'save' | 'discard' | 'cancel') {
@@ -138,7 +159,7 @@ onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clea
       <div class="sidebar-bottom"><span class="local-dot"></span> 本地优先，安心书写 <span>v0.1.0</span></div>
     </aside>
     <main>
-      <header class="toolbar"><div class="toolbar-group"><button :title="sidebar ? '收起侧栏' : '展开侧栏'" @click="sidebar = !sidebar"><PanelLeftClose v-if="sidebar" :size="19" /><PanelLeft v-else :size="19" /></button><span class="divider"></span><button title="新建 Ctrl+N" @click="newNote"><FilePlus2 :size="18" /></button><button title="打开 Ctrl+O" :disabled="busy" @click="openFile"><FolderOpen :size="18" /></button><button title="保存 Ctrl+S" :disabled="busy" @click="saveNote()"><Save :size="18" /></button><button class="save-as" :disabled="busy" @click="saveNote(active, true)">另存为</button><span class="divider"></span><button title="撤销 Ctrl+Z" @click="view && undo(view)"><Undo2 :size="17" /></button><button title="重做 Ctrl+Y" @click="view && redo(view)"><Redo2 :size="17" /></button></div><div class="toolbar-group"><button title="查找与替换 Ctrl+F" @click="view && openSearchPanel(view)"><Search :size="18" /></button><button title="JSON / JSONC 格式化" @click="formatJson"><Braces :size="18" /></button><span class="divider"></span><button :title="dark ? '切换浅色' : '切换深色'" @click="toggleTheme"><Sun v-if="dark" :size="18" /><Moon v-else :size="18" /></button></div></header>
+      <header class="toolbar"><div class="toolbar-group"><button :title="sidebar ? '收起侧栏' : '展开侧栏'" @click="sidebar = !sidebar"><PanelLeftClose v-if="sidebar" :size="19" /><PanelLeft v-else :size="19" /></button><span class="divider"></span><button title="新建 Ctrl+N" @click="newNote"><FilePlus2 :size="18" /></button><button title="打开 Ctrl+O" :disabled="busy" @click="openFile"><FolderOpen :size="18" /></button><button title="保存 Ctrl+S" :disabled="busy" @click="saveNote()"><Save :size="18" /></button><button class="save-as" :disabled="busy" @click="saveNote(active, true)">另存为</button><span class="divider"></span><button title="撤销 Ctrl+Z" @click="view && undo(view)"><Undo2 :size="17" /></button><button title="重做 Ctrl+Y" @click="view && redo(view)"><Redo2 :size="17" /></button></div><div class="toolbar-group"><label class="export-control" title="导出当前 Markdown 文档"><Download :size="16" /><select aria-label="导出格式" :disabled="!canExport" value="" @change="exportNote"><option value="" disabled>导出</option><option value="docx">Word (.docx)</option><option value="pdf">PDF (.pdf)</option></select></label><button title="查找与替换 Ctrl+F" @click="view && openSearchPanel(view)"><Search :size="18" /></button><button title="JSON / JSONC 格式化" @click="formatJson"><Braces :size="18" /></button><span class="divider"></span><button :title="dark ? '切换浅色' : '切换深色'" @click="toggleTheme"><Sun v-if="dark" :size="18" /><Moon v-else :size="18" /></button></div></header>
       <div class="tabs" role="tablist"><div v-for="note in notes" :key="note.id" class="tab" :class="{ active: note.id === activeId }"><button role="tab" :aria-selected="note.id === activeId" @click="selectNote(note)"><FileText :size="14" />{{ note.name }}<span v-if="note.dirty" class="dirty-dot">●</span></button><button class="close-tab" :aria-label="`关闭 ${note.name}`" @click="requestClose(note)"><X :size="13" /></button></div><button class="add-tab" title="新建笔记" @click="newNote"><Plus :size="16" /></button></div>
       <div class="document-bar"><div class="breadcrumb"><span>工作空间</span><ChevronRight :size="13" /><strong :title="active?.path ?? ''">{{ active?.name }}</strong><span v-if="active?.dirty" class="unsaved">未保存</span></div><div class="mode-switch" aria-label="编辑模式"><button :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="14" />源码</button><button :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="14" />原位</button><button :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="14" />分屏</button></div></div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；超过 200 万字符不写恢复草稿，请及时保存。</div>

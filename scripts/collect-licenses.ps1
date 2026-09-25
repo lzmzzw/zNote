@@ -34,6 +34,8 @@ try {
     }
     if (-not $files) { $notices.Add('  该发布包根目录未包含单独许可文件，请参见上游仓库与包元数据。') }
   }
+  Copy-Item -LiteralPath (Join-Path $root 'src/assets/NotoSansSC-OFL.txt') -Destination (Join-Path $destination 'font-NotoSansSC-OFL.txt') -Force
+  $notices.Add('font Noto Sans SC | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl/notosanssc')
   [System.IO.File]::WriteAllLines((Join-Path $root 'THIRD_PARTY_NOTICES.txt'), $notices, [System.Text.UTF8Encoding]::new($false))
   Write-Output "Collected $copied license files for $($packages.Count) dependency records."
 } finally { Pop-Location }

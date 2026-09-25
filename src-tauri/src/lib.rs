@@ -87,6 +87,41 @@ async fn native_save(
         revision: document::revision(&bytes),
     }))
 }
+#[tauri::command]
+async fn native_export(name: String, format: String, bytes: Vec<u8>) -> Result<bool, String> {
+    let (extension, label) = match format.as_str() {
+        "docx" => ("docx", "Word 文档"),
+        "pdf" => ("pdf", "PDF 文档"),
+        _ => return Err("不支持的导出格式".into()),
+    };
+    if bytes.is_empty() || bytes.len() > 40 * 1024 * 1024 {
+        return Err("导出文件为空或超过 40 MB 限制".into());
+    }
+    let stem = std::path::Path::new(&name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("未命名");
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter(label, &[extension])
+        .set_file_name(format!("{stem}.{extension}"))
+        .save_file()
+        .await
+    else {
+        return Ok(false);
+    };
+    let path = file.path();
+    if path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case(extension))
+        != Some(true)
+    {
+        return Err("导出文件扩展名与所选格式不一致".into());
+    }
+    document::atomic_write(path, &bytes)?;
+    Ok(true)
+}
 fn recovery_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -134,6 +169,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             native_open,
             native_save,
+            native_export,
             recovery_load,
             recovery_save
         ])
