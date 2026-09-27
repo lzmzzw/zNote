@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, ViewPlugin, type DecorationSet } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, ViewPlugin, type DecorationSet } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { languages } from '@codemirror/language-data';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
-import { syntaxHighlighting, bracketMatching, syntaxTree, HighlightStyle } from '@codemirror/language';
+import { syntaxHighlighting, bracketMatching, HighlightStyle } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -18,12 +18,13 @@ import { canFormatCode } from './code-format';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { parseCsv } from './csv';
 import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
+import { liveMarkdownDecorations } from './live-markdown';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
 function formatForName(name: string): NoteFormat { return /\.md$|\.markdown$/i.test(name) ? 'markdown' : /\.jsonc?$/i.test(name) ? 'json' : /\.csv$/i.test(name) ? 'csv' : 'txt'; }
 interface Note extends NativeDocument { id: number; name: string; format: NoteFormat; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean }
-const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式会收起非当前行的标题、粗体与斜体标记。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
+const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式会收起非当前行的标题、强调、引用及代码围栏标记，并显示分隔线。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
@@ -78,27 +79,7 @@ const settingsElement = ref<HTMLElement>(); let settingsPreviousFocus: HTMLEleme
 watch(closePrompt, async value => { if (value) { previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; await nextTick(); modalElement.value?.querySelector<HTMLButtonElement>('button')?.focus(); } else { if (previousFocus?.isConnected) previousFocus.focus(); else view?.focus(); } });
 watch(settingsOpen, async value => { if (value) { settingsPreviousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; await nextTick(); settingsElement.value?.querySelector<HTMLButtonElement>('button')?.focus(); } else if (settingsPreviousFocus?.isConnected) settingsPreviousFocus.focus(); });
 function touch() { notes.value = [...notes.value]; }
-function liveDecorations(v: EditorView) {
-  const ranges = [];
-  for (const { from, to } of v.visibleRanges) for (let pos = from; pos <= to;) {
-    const line = v.state.doc.lineAt(pos); const match = /^(#{1,6})\s/.exec(line.text);
-    if (match) ranges.push(Decoration.line({ class: `live-heading live-h${match[1].length}` }).range(line.from));
-    if (/^>\s/.test(line.text)) ranges.push(Decoration.line({ class: 'live-quote' }).range(line.from));
-    pos = line.to + 1;
-  }
-  const selection = v.state.selection.main;
-  const selectedFrom = v.state.doc.lineAt(selection.from).from;
-  const selectedTo = v.state.doc.lineAt(selection.to).to;
-  for (const visible of v.visibleRanges) syntaxTree(v.state).iterate({ from: visible.from, to: visible.to, enter(node) {
-    if (!['HeaderMark', 'EmphasisMark'].includes(node.name)) return;
-    if (node.from <= selectedTo && node.to >= selectedFrom) return;
-    let to = node.to;
-    if (node.name === 'HeaderMark' && v.state.doc.sliceString(to, to + 1) === ' ') to++;
-    ranges.push(Decoration.replace({}).range(node.from, to));
-  } });
-  return Decoration.set(ranges, true);
-}
-const livePlugin = ViewPlugin.fromClass(class { decorations: DecorationSet; constructor(v: EditorView) { this.decorations = liveDecorations(v); } update(u: { docChanged: boolean; viewportChanged: boolean; selectionSet: boolean; view: EditorView }) { if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = liveDecorations(u.view); } }, { decorations: v => v.decorations });
+const livePlugin = ViewPlugin.fromClass(class { decorations: DecorationSet; constructor(v: EditorView) { this.decorations = liveMarkdownDecorations(v); } update(u: { docChanged: boolean; viewportChanged: boolean; selectionSet: boolean; view: EditorView }) { if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = liveMarkdownDecorations(u.view); } }, { decorations: v => v.decorations });
 function scrollAnchors() {
   if (!view || !previewHost.value) return [{ source: 0, preview: 0 }];
   const sourceMax = Math.max(0, view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight);
