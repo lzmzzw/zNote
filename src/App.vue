@@ -10,8 +10,9 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, syntaxTree 
 import { oneDark } from '@codemirror/theme-one-dark';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
-import { renderMarkdown } from './preview';
+import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronDown, PanelLeftClose, PanelLeftOpen, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
+import { renderMarkdown, markdownHeadings } from './preview';
+import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { parseCsv } from './csv';
 import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
 
@@ -27,7 +28,16 @@ const mode = ref<'source' | 'live' | 'split'>('live'); const dark = ref(false);
 const status = ref('准备就绪'); const busy = ref(false); const position = ref('行 1，列 1'); const count = ref(0);
 const toast = ref(''); let toastTimer: ReturnType<typeof setTimeout>;
 watch(status, value => { if (value === '准备就绪') return; toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; }, 4000); });
-const preview = ref(''); const headings = ref<{ title: string; from: number; level: number }[]>([]);
+const preview = ref(''); const headings = ref<OutlineNode[]>([]);
+const outlineCollapsed = ref(false);
+const collapsedHeadings = ref<Record<number, string[]>>({});
+const shownHeadings = computed(() => visibleOutline(headings.value, new Set(collapsedHeadings.value[activeId.value] ?? [])));
+function toggleHeading(key: string) {
+  const collapsed = new Set(collapsedHeadings.value[activeId.value] ?? []);
+  if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+  collapsedHeadings.value = { ...collapsedHeadings.value, [activeId.value]: [...collapsed] };
+}
+function goToHeading(heading: OutlineNode) { view?.dispatch({ selection: { anchor: heading.from }, scrollIntoView: true }); view?.focus(); }
 const csvRows = ref<string[][]>([]); const csvRowLines = ref<{ start: number; end: number }[]>([]); const csvError = ref<string | null>(null);
 const jsonRows = ref<JsonPreviewRow[]>([]); const previewHost = ref<HTMLElement>();
 let pendingSourceScroll: number | null = null; let pendingPreviewScroll: number | null = null;
@@ -168,7 +178,7 @@ function refreshDerived() {
   cachedScrollAnchors = null;
   if (doc.length > 1_000_000) { headings.value = []; preview.value = ''; csvRows.value = []; csvRowLines.value = []; jsonRows.value = []; csvError.value = null; reconfigure(); return; }
   const text = doc.toString(); active.value.dirty = active.value.metaDirty || text !== active.value.saved; touch();
-  headings.value = []; if (isMarkdown.value) for (let i = 1; i <= doc.lines; i++) { const l = doc.line(i); const m = /^(#{1,6})\s+(.+)/.exec(l.text); if (m) headings.value.push({ title: m[2], from: l.from, level: m[1].length }); }
+  headings.value = isMarkdown.value ? buildOutline(markdownHeadings(text).map(item => ({ title: item.title, level: item.level, from: doc.line(item.line).from }))) : [];
   if (mode.value === 'split') {
     if (isCsv.value) { const parsed = parseCsv(text); csvRows.value = parsed.rows; csvRowLines.value = parsed.rowLines; csvError.value = parsed.error; }
     else if (isMarkdown.value) preview.value = renderMarkdown(text);
@@ -206,7 +216,7 @@ async function exportFormat(format: 'docx' | 'pdf') {
   finally { busy.value = false; }
 }
 function requestClose(note: Note) { if (note.dirty) closePrompt.value = { kind: 'tab', note }; else removeNote(note); }
-function removeNote(note: Note) { notes.value = notes.value.filter(n => n.id !== note.id); if (!notes.value.length) createNote(); else if (activeId.value === note.id) selectNote(notes.value[0]); scheduleRecovery(); }
+function removeNote(note: Note) { notes.value = notes.value.filter(n => n.id !== note.id); const { [note.id]: _removed, ...remaining } = collapsedHeadings.value; collapsedHeadings.value = remaining; if (!notes.value.length) createNote(); else if (activeId.value === note.id) selectNote(notes.value[0]); scheduleRecovery(); }
 async function resolveClose(action: 'save' | 'discard' | 'cancel') {
   const prompt = closePrompt.value; if (!prompt || busy.value) return; if (action === 'cancel') { closePrompt.value = null; return; }
   if (action === 'save') { for (const note of prompt.kind === 'window' ? notes.value.filter(n => n.dirty) : [prompt.note!]) if (!(await saveNote(note))) return; }
@@ -301,9 +311,16 @@ onBeforeUnmount(() => { view?.scrollDOM.removeEventListener('scroll', onSourceSc
       <div v-if="native" class="window-controls"><button title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()"><Minus :size="16" /></button><button title="最大化或还原" aria-label="最大化或还原" @click="getCurrentWindow().toggleMaximize()"><Square :size="13" /></button><button class="window-close" title="关闭" aria-label="关闭" @click="closeWindow"><X :size="17" /></button></div>
     </div>
     <div class="app-body">
-    <aside v-if="headings.length" class="sidebar">
+    <aside v-if="isMarkdown && !large && !outlineCollapsed" class="sidebar">
       <div class="section-title outline-title">文档大纲</div>
-      <nav class="outline" aria-label="文档大纲"><button v-for="heading in headings" :key="heading.from" :style="{ paddingLeft: `${12 + (heading.level - 1) * 12}px` }" @click="view?.dispatch({ selection: { anchor: heading.from }, scrollIntoView: true })"><ChevronRight :size="12" />{{ heading.title }}</button></nav>
+      <nav class="outline" aria-label="文档大纲">
+        <div v-for="heading in shownHeadings" :key="heading.key" class="outline-row" :style="{ paddingLeft: `${heading.depth * 14}px` }">
+          <button v-if="heading.children.length" class="outline-disclosure" :aria-label="`${collapsedHeadings[activeId]?.includes(heading.key) ? '展开' : '折叠'} ${heading.title}`" :aria-expanded="!collapsedHeadings[activeId]?.includes(heading.key)" :title="collapsedHeadings[activeId]?.includes(heading.key) ? '展开子标题' : '折叠子标题'" @click="toggleHeading(heading.key)"><ChevronRight v-if="collapsedHeadings[activeId]?.includes(heading.key)" :size="13" /><ChevronDown v-else :size="13" /></button>
+          <span v-else class="outline-disclosure-placeholder" aria-hidden="true"></span>
+          <button class="outline-link" :title="heading.title" @click="goToHeading(heading)">{{ heading.title }}</button>
+        </div>
+        <p v-if="!headings.length" class="outline-empty">暂无标题</p>
+      </nav>
     </aside>
     <main>
       <div class="tabs">
@@ -319,7 +336,7 @@ onBeforeUnmount(() => { view?.scrollDOM.removeEventListener('scroll', onSourceSc
         </section>
         <section v-if="mode === 'split' && !large && isCsv" ref="previewHost" class="preview csv-preview" aria-label="CSV 表格预览" @scroll="onPreviewScroll" @click="onPreviewClick"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead><tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end"><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(1)" :key="rowIndex" :data-source-start="csvRowLines[rowIndex + 1]?.start" :data-source-end="csvRowLines[rowIndex + 1]?.end"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section>
       </div>
-      <footer><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
+      <footer><button v-if="isMarkdown && !large" class="outline-toggle" :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :aria-expanded="!outlineCollapsed" @click="outlineCollapsed = !outlineCollapsed"><PanelLeftOpen v-if="outlineCollapsed" :size="15" /><PanelLeftClose v-else :size="15" /></button><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
     </main>
     </div>
     <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
