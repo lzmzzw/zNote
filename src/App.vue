@@ -10,7 +10,7 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, syntaxTree 
 import { oneDark } from '@codemirror/theme-one-dark';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronDown, PanelLeftClose, PanelLeftOpen, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { parseCsv } from './csv';
@@ -30,6 +30,7 @@ const toast = ref(''); let toastTimer: ReturnType<typeof setTimeout>;
 watch(status, value => { if (value === '准备就绪') return; toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; }, 4000); });
 const preview = ref(''); const headings = ref<OutlineNode[]>([]);
 const outlineCollapsed = ref(false);
+const gutterWidth = ref(37); let gutterObserver: ResizeObserver | undefined;
 const collapsedHeadings = ref<Record<number, string[]>>({});
 const shownHeadings = computed(() => visibleOutline(headings.value, new Set(collapsedHeadings.value[activeId.value] ?? [])));
 function toggleHeading(key: string) {
@@ -280,13 +281,15 @@ function beforeUnload(e: BeforeUnloadEvent) { if (notes.value.some(n => n.dirty)
 onMounted(async () => {
   dark.value = localStorage.getItem('znote-theme') === 'dark'; createNote({ path: null, text: welcome, encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null }, '欢迎使用.md');
   view = new EditorView({ state: active.value!.state, parent: host.value }); view.scrollDOM.addEventListener('scroll', onSourceScroll); refreshDerived();
+  const gutters = view.dom.querySelector<HTMLElement>('.cm-gutters');
+  if (gutters) { gutterObserver = new ResizeObserver(() => { gutterWidth.value = gutters.getBoundingClientRect().width; }); gutterObserver.observe(gutters); gutterWidth.value = gutters.getBoundingClientRect().width; }
   worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' }); worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => { const pending = pendingFormat; if (!pending || data.id !== pending.id) return; pendingFormat = undefined; if (pending.note.version !== pending.version || !notes.value.includes(pending.note)) { status.value = '内容已变化，已忽略过期格式化结果'; return; } if (data.error) { status.value = data.error; return; } const changes = { from: 0, to: pending.note.state.doc.length, insert: data.text! }; if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' }); else { pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state; pending.note.version++; pending.note.dirty = true; touch(); scheduleRecovery(); } status.value = '已格式化 · Ctrl + Z 可撤销'; };
   window.addEventListener('keydown', shortcuts); window.addEventListener('beforeunload', beforeUnload);
   if (native) { unlisten = await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); if (notes.value.some(n => n.dirty)) closePrompt.value = { kind: 'window' }; else { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } });
     try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; reconfigure(); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
   }
 });
-onBeforeUnmount(() => { view?.scrollDOM.removeEventListener('scroll', onSourceScroll); view?.destroy(); worker?.terminate(); unlisten?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); window.removeEventListener('beforeunload', beforeUnload); });
+onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEventListener('scroll', onSourceScroll); view?.destroy(); worker?.terminate(); unlisten?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); window.removeEventListener('beforeunload', beforeUnload); });
 </script>
 
 <template>
@@ -336,7 +339,7 @@ onBeforeUnmount(() => { view?.scrollDOM.removeEventListener('scroll', onSourceSc
         </section>
         <section v-if="mode === 'split' && !large && isCsv" ref="previewHost" class="preview csv-preview" aria-label="CSV 表格预览" @scroll="onPreviewScroll" @click="onPreviewClick"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead><tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end"><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(1)" :key="rowIndex" :data-source-start="csvRowLines[rowIndex + 1]?.start" :data-source-end="csvRowLines[rowIndex + 1]?.end"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section>
       </div>
-      <footer><button v-if="isMarkdown && !large" class="outline-toggle" :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :aria-expanded="!outlineCollapsed" @click="outlineCollapsed = !outlineCollapsed"><PanelLeftOpen v-if="outlineCollapsed" :size="15" /><PanelLeftClose v-else :size="15" /></button><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
+      <footer><button v-if="isMarkdown && !large" class="outline-toggle" :style="{ width: `${gutterWidth}px` }" :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :aria-expanded="!outlineCollapsed" @click="outlineCollapsed = !outlineCollapsed"><ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" /></button><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
     </main>
     </div>
     <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
