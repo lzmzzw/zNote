@@ -29,6 +29,7 @@ async fn native_open(access: State<'_, Access>) -> Result<Option<Document>, Stri
 async fn native_save(
     access: State<'_, Access>,
     path: Option<String>,
+    name: String,
     text: String,
     encoding: String,
     bom: bool,
@@ -40,15 +41,30 @@ async fn native_save(
     let old = path.map(PathBuf::from);
     let selected = save_as || old.is_none();
     let dest = if selected {
-        let mut dialog = rfd::AsyncFileDialog::new()
-            .add_filter("Markdown", &["md"])
-            .add_filter("文本", &["txt"]);
+        let extension = std::path::Path::new(&name)
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("txt");
+        let mut dialog = rfd::AsyncFileDialog::new();
+        dialog = match extension.to_ascii_lowercase().as_str() {
+            "md" | "markdown" => dialog.add_filter("Markdown", &["md", "markdown"]),
+            "json" | "jsonc" => dialog.add_filter("JSON", &["json", "jsonc"]),
+            "csv" => dialog.add_filter("CSV", &["csv"]),
+            "txt" => dialog.add_filter("文本", &["txt"]),
+            other if !other.is_empty()
+                && other.len() <= 12
+                && other.chars().all(|character| character.is_ascii_alphanumeric()) =>
+            {
+                dialog.add_filter("当前格式", &[other])
+            }
+            _ => dialog.add_filter("文本", &["txt"]),
+        };
         if let Some(p) = &old {
             if let Some(n) = p.file_name() {
                 dialog = dialog.set_file_name(n.to_string_lossy());
             }
         } else {
-            dialog = dialog.set_file_name("未命名.md");
+            dialog = dialog.set_file_name(name);
         }
         let Some(file) = dialog.save_file().await else {
             return Ok(None);

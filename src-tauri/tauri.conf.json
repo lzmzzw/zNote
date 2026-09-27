@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "zNote",
+        "decorations": false,
         "width": 1280,
         "height": 820,
         "minWidth": 800,
@@ -20,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost; font-src 'self' data:"
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.github.com; font-src 'self' data:"
     }
   },
   "bundle": {
