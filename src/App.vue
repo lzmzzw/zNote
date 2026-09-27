@@ -13,6 +13,7 @@ import { syntaxHighlighting, bracketMatching, HighlightStyle } from '@codemirror
 import { tags } from '@lezer/highlight';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings, editableCodeFence } from './preview';
 import { canFormatCode } from './code-format';
@@ -24,8 +25,8 @@ import { hydrateDiagrams } from './diagram';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
-function formatForName(name: string): NoteFormat { return /\.md$|\.markdown$/i.test(name) ? 'markdown' : /\.jsonc?$/i.test(name) ? 'json' : /\.csv$/i.test(name) ? 'csv' : 'txt'; }
-interface Note extends NativeDocument { id: number; name: string; format: NoteFormat; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean }
+function formatForName(name: string): NoteFormat { return /\.md$|\.markdown$/i.test(name) ? 'markdown' : /\.(jsonc?|geojson)$/i.test(name) ? 'json' : /\.csv$/i.test(name) ? 'csv' : 'txt'; }
+interface Note extends NativeDocument { id: number; name: string; format: NoteFormat; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean; requiresSaveAs: boolean }
 const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式排版未编辑的 Markdown 块，点击后直接修改源码。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
@@ -74,6 +75,9 @@ let refreshTimer: ReturnType<typeof setTimeout>; let recoveryTimer: ReturnType<t
 let worker: Worker; let formatId = 0; let pendingFormat: { id: number; note: Note; version: number; format: NoteFormat; from: number; to: number } | undefined;
 let recoveryWrite: Promise<unknown> = Promise.resolve();
 let unlisten: (() => void) | undefined;
+let unlistenAssociated: (() => void) | undefined;
+let openingAssociated = false;
+let pendingAssociated = false;
 const closePrompt = shallowRef<{ kind: 'tab' | 'window'; note?: Note } | null>(null);
 const native = isTauri();
 const modalElement = ref<HTMLElement>(); let previousFocus: HTMLElement | null = null;
@@ -164,7 +168,7 @@ function stateFor(text: string, format: NoteFormat) {
 }
 function createNote(doc?: NativeDocument, name = '未命名.txt') {
   const text = doc?.text ?? ''; const noteName = doc?.path?.split(/[\\/]/).pop() ?? name; const format = formatForName(noteName);
-  const note: Note = { path: null, text: '', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null, ...doc, id: nextId++, name: noteName, format, state: stateFor(text, format), saved: text, version: 0, dirty: false, metaDirty: false };
+  const note: Note = { path: null, text: '', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null, ...doc, id: nextId++, name: noteName, format, state: stateFor(text, format), saved: text, version: 0, dirty: false, metaDirty: false, requiresSaveAs: false };
   notes.value = [...notes.value, note]; selectNote(note); return note;
 }
 function selectNote(note: Note) { if (view && active.value) active.value.state = view.state; activeId.value = note.id; view?.setState(note.state); cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); const head = note.state.selection.main.head; const line = note.state.doc.lineAt(head); position.value = `行 ${line.number}，列 ${head - line.from + 1}`; view?.focus(); }
@@ -185,14 +189,36 @@ function refreshDerived() {
   }
 }
 function newNote() { createNote(); changeMode('source'); status.value = '新建笔记'; }
-async function openFile() { if (!native) { status.value = '浏览器预览模式：本地打开与保存请使用桌面版'; return; } busy.value = true; try { const doc = await invoke<NativeDocument | null>('native_open'); if (doc) { const existing = notes.value.find(n => n.path === doc.path); if (existing) selectNote(existing); else createNote(doc); if (active.value?.format === 'csv') changeMode('split'); else if (active.value?.format === 'txt' && mode.value === 'split') changeMode('source'); status.value = '文件已打开'; } } catch (e) { status.value = String(e); } finally { busy.value = false; } }
+async function openFile() { if (!native) { status.value = '浏览器预览模式：本地打开与保存请使用桌面版'; return; } busy.value = true; try { const doc = await invoke<NativeDocument | null>('native_open'); if (doc) { const existing = notes.value.find(n => n.path?.toLowerCase() === doc.path?.toLowerCase()); if (existing) { existing.requiresSaveAs = false; selectNote(existing); } else createNote(doc); if (active.value?.format === 'csv') changeMode('split'); else if (active.value?.format === 'txt' && mode.value === 'split') changeMode('source'); status.value = '文件已打开'; } } catch (e) { status.value = String(e); } finally { busy.value = false; } }
+async function openAssociatedFiles() {
+  if (openingAssociated) { pendingAssociated = true; return; }
+  openingAssociated = true;
+  try {
+    do {
+      pendingAssociated = false;
+      const result = await invoke<{ documents: NativeDocument[]; errors: string[] }>('native_take_open_requests');
+      for (const doc of result.documents) {
+        const path = doc.path;
+        if (!path) continue;
+        const existing = notes.value.find(note => note.path?.toLowerCase() === path.toLowerCase());
+        if (existing) selectNote(existing);
+        else { const note = createNote(doc); note.requiresSaveAs = true; }
+        if (active.value?.format === 'csv') changeMode('split');
+        else if (active.value?.format === 'txt' && mode.value === 'split') changeMode('source');
+      }
+      if (result.errors.length) status.value = `打开文件失败：${result.errors.join('；')}`;
+      else if (result.documents.length) status.value = '文件已打开；首次保存需确认位置';
+    } while (pendingAssociated);
+  } catch (error) { status.value = `关联文件打开失败：${error}`; }
+  finally { openingAssociated = false; }
+}
 async function saveNote(note = active.value, saveAs = false): Promise<boolean> {
   if (!note) return true; if (!native) { status.value = '浏览器预览模式无法保存本地文件，请使用桌面版'; return false; }
   if (note.lineEnding === 'Mixed') { status.value = '混合换行：请先在底栏选择 LF 或 CRLF，再保存'; return false; }
   busy.value = true; const text = note.state.doc.toString(); const savingVersion = note.version;
-  try { const doc = await invoke<NativeDocument | null>('native_save', { path: note.path, name: note.name, text, encoding: note.encoding, bom: note.bom, lineEnding: note.lineEnding, revision: note.revision, saveAs }); if (!doc) return false;
+  try { const doc = await invoke<NativeDocument | null>('native_save', { path: note.path, name: note.name, text, encoding: note.encoding, bom: note.bom, lineEnding: note.lineEnding, revision: note.revision, saveAs: saveAs || note.requiresSaveAs }); if (!doc) return false;
     const changedDuringSave = note.version !== savingVersion;
-    Object.assign(note, { path: doc.path, encoding: changedDuringSave ? note.encoding : doc.encoding, bom: changedDuringSave ? note.bom : doc.bom, lineEnding: changedDuringSave ? note.lineEnding : doc.lineEnding, revision: doc.revision, saved: text, name: doc.path?.split(/[\\/]/).pop() ?? note.name, metaDirty: changedDuringSave && note.metaDirty, dirty: changedDuringSave && note.metaDirty || note.state.doc.toString() !== text }); touch(); reconfigure(); status.value = '已保存到本机'; scheduleRecovery(); if (note.dirty) { status.value = '保存期间有新修改，请再次保存'; return false; } return true;
+    Object.assign(note, { path: doc.path, encoding: changedDuringSave ? note.encoding : doc.encoding, bom: changedDuringSave ? note.bom : doc.bom, lineEnding: changedDuringSave ? note.lineEnding : doc.lineEnding, revision: doc.revision, saved: text, name: doc.path?.split(/[\\/]/).pop() ?? note.name, metaDirty: changedDuringSave && note.metaDirty, dirty: changedDuringSave && note.metaDirty || note.state.doc.toString() !== text, requiresSaveAs: false }); touch(); reconfigure(); status.value = '已保存到本机'; scheduleRecovery(); if (note.dirty) { status.value = '保存期间有新修改，请再次保存'; return false; } return true;
   } catch (e) { status.value = String(e); return false; } finally { busy.value = false; }
 }
 async function exportFormat(format: 'docx' | 'pdf') {
@@ -296,10 +322,12 @@ onMounted(async () => {
   worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' }); worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => { const pending = pendingFormat; if (!pending || data.id !== pending.id) return; pendingFormat = undefined; if (pending.note.version !== pending.version || pending.note.format !== pending.format || !notes.value.includes(pending.note)) { status.value = '内容已变化，已忽略过期格式化结果'; return; } if (data.error) { status.value = data.error; return; } const changes = { from: pending.from, to: pending.to, insert: data.text! }; if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' }); else { pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state; pending.note.version++; pending.note.dirty = true; touch(); scheduleRecovery(); } status.value = '已格式化 · Ctrl + Z 可撤销'; };
   window.addEventListener('keydown', shortcuts); window.addEventListener('beforeunload', beforeUnload);
   if (native) { unlisten = await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); if (notes.value.some(n => n.dirty)) closePrompt.value = { kind: 'window' }; else { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } });
+    unlistenAssociated = await listen('associated-file-open', () => { void openAssociatedFiles(); });
     try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; reconfigure(); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
+    await openAssociatedFiles();
   }
 });
-onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEventListener('scroll', onSourceScroll); view?.destroy(); worker?.terminate(); unlisten?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); window.removeEventListener('beforeunload', beforeUnload); });
+onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEventListener('scroll', onSourceScroll); view?.destroy(); worker?.terminate(); unlisten?.(); unlistenAssociated?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); window.removeEventListener('beforeunload', beforeUnload); });
 </script>
 
 <template>

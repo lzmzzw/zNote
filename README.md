@@ -6,6 +6,7 @@
 
 - 多标签、独立撤销历史、行号、自动换行、搜索替换。顶部菜单提供文件、编辑、格式和帮助操作；帮助中的设置可调整主题及当前文档的保存编码、换行格式。
 - 新建标签默认为 `.txt`；打开本地文档按 `.md` / `.markdown`、`.json` / `.jsonc`、`.csv` 后缀识别格式。格式菜单可切换 Markdown、JSON、CSV；未保存标签会同步更改建议文件名。CSV 切换后显示表格分屏，JSON 切换后对非空内容执行可撤销的格式化。
+- Windows 安装版注册 `.txt`、`.md`、`.markdown`、`.json`、`.jsonc`、`.geojson`、`.csv`、`.log`、`.yaml`、`.yml`、`.toml`、`.xml`、`.html`、`.css`、`.js`、`.ts`、`.rs`、`.sql` 为可用 zNote 打开的文本格式；`.geojson` 按 JSON 显示，`.sql` 按普通文本显示。是否设为默认应用由 Windows 和用户决定。资源管理器打开文件会交给现有 zNote 窗口，或启动新窗口；关联打开的文件首次保存需通过原生保存对话框确认路径。
 - Markdown 源码、原位、分屏预览；原位与分屏共用 CommonMark/GFM 解析，排版标题、强调、列表与任务框、链接、引用、表格、代码块、分隔线、脚注及行内/块级公式。原位点击排版块会显示该块的 Markdown 原文供编辑，离开后重新排版。`mermaid` 与 Mermaid 风格的 `flowchart` 围栏显示 Mermaid 图；`flow` 与 flowchart.js 风格的 `flowchart` 围栏显示 flowchart.js 图。分屏预览按语言高亮普通代码块。编辑器自动补全括号与引号；格式菜单可格式化光标所在的 JavaScript、TypeScript、JSON、JSONC、CSS 或 HTML 代码围栏，支持撤销。
 - Markdown、JSON 和 CSV 分屏时，两侧按内容锚点同步纵向滚动；点击源码或右侧预览会高亮并定位对应内容。JSON 右侧为只读结构视图，按解析节点对应源码字符位置，不要求两侧显示行号相同。
 - 打开 `.csv` 后自动以分屏显示表格预览；首行显示为表头，支持引号字段、字段内逗号和换行。左侧源码仍可编辑并保存原 CSV。

@@ -33,6 +33,13 @@
       "icons/icon.ico"
     ],
     "shortDescription": "个人文本与 Markdown 编辑器",
+    "fileAssociations": [
+      {
+        "ext": ["txt", "md", "markdown", "json", "jsonc", "geojson", "csv", "log", "yaml", "yml", "toml", "xml", "html", "css", "js", "ts", "rs", "sql"],
+        "name": "zNote 文本文件",
+        "description": "zNote 文本文件"
+      }
+    ],
     "windows": {
       "nsis": {
         "installMode": "currentUser",
