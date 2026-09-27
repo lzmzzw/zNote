@@ -2,7 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, ViewPlugin, type DecorationSet } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
@@ -10,7 +10,7 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, syntaxTree 
 import { oneDark } from '@codemirror/theme-one-dark';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { FilePlus2, FolderOpen, Save, Download, Search, Moon, Sun, PanelLeftClose, PanelLeft, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Undo2, Redo2, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
 import { renderMarkdown } from './preview';
 import { parseCsv } from './csv';
 
@@ -22,8 +22,10 @@ const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你�
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
-const mode = ref<'source' | 'live' | 'split'>('live'); const dark = ref(false); const sidebar = ref(true);
+const mode = ref<'source' | 'live' | 'split'>('live'); const dark = ref(false);
 const status = ref('准备就绪'); const busy = ref(false); const position = ref('行 1，列 1'); const count = ref(0);
+const toast = ref(''); let toastTimer: ReturnType<typeof setTimeout>;
+watch(status, value => { if (value === '准备就绪') return; toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; }, 4000); });
 const preview = ref(''); const headings = ref<{ title: string; from: number; level: number }[]>([]);
 const csvRows = ref<string[][]>([]); const csvError = ref<string | null>(null);
 const isCsv = computed(() => active.value?.format === 'csv');
@@ -102,11 +104,6 @@ async function saveNote(note = active.value, saveAs = false): Promise<boolean> {
     const changedDuringSave = note.version !== savingVersion;
     Object.assign(note, { path: doc.path, encoding: changedDuringSave ? note.encoding : doc.encoding, bom: changedDuringSave ? note.bom : doc.bom, lineEnding: changedDuringSave ? note.lineEnding : doc.lineEnding, revision: doc.revision, saved: text, name: doc.path?.split(/[\\/]/).pop() ?? note.name, metaDirty: changedDuringSave && note.metaDirty, dirty: changedDuringSave && note.metaDirty || note.state.doc.toString() !== text }); touch(); reconfigure(); status.value = '已保存到本机'; scheduleRecovery(); if (note.dirty) { status.value = '保存期间有新修改，请再次保存'; return false; } return true;
   } catch (e) { status.value = String(e); return false; } finally { busy.value = false; }
-}
-async function exportNote(event: Event) {
-  const select = event.target as HTMLSelectElement;
-  const format = select.value as 'docx' | 'pdf'; select.value = '';
-  await exportFormat(format);
 }
 async function exportFormat(format: 'docx' | 'pdf') {
   menu.value = null;
@@ -197,7 +194,7 @@ onMounted(async () => {
     try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; reconfigure(); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
   }
 });
-onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); window.removeEventListener('keydown', shortcuts); window.removeEventListener('beforeunload', beforeUnload); });
+onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); window.removeEventListener('beforeunload', beforeUnload); });
 </script>
 
 <template>
@@ -206,13 +203,13 @@ onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clea
       <img class="titlebar-icon" src="/znote.svg" alt="" width="20" height="20" data-tauri-drag-region />
       <nav class="app-menu" aria-label="主菜单">
         <div class="menu-group"><button :aria-expanded="menu === 'file'" @click="toggleMenu('file')">文件</button><div v-if="menu === 'file'" class="menu-popup">
-          <button @click="menu = null; newNote()"><FilePlus2 :size="15" />新建 <kbd>Ctrl+N</kbd></button><button :disabled="busy" @click="menu = null; openFile()"><FolderOpen :size="15" />打开 <kbd>Ctrl+O</kbd></button><button :disabled="busy" @click="menu = null; saveNote()"><Save :size="15" />保存 <kbd>Ctrl+S</kbd></button><hr /><details class="export-submenu"><summary><Download :size="15" />导出 <ChevronRight :size="14" class="export-chevron" /></summary><button :disabled="!canExport" class="menu-subitem" @click="exportFormat('docx')">Word (.docx)</button><button :disabled="!canExport" class="menu-subitem" @click="exportFormat('pdf')">PDF (.pdf)</button></details>
+          <button @click="menu = null; newNote()"><FilePlus2 :size="15" />新建 <kbd>Ctrl+N</kbd></button><button :disabled="busy" @click="menu = null; openFile()"><FolderOpen :size="15" />打开 <kbd>Ctrl+O</kbd></button><button :disabled="busy" @click="menu = null; saveNote()"><Save :size="15" />保存 <kbd>Ctrl+S</kbd></button><button :disabled="busy" @click="menu = null; saveNote(active, true)"><Save :size="15" />另存为 <kbd>Ctrl+Shift+S</kbd></button><hr /><details class="export-submenu"><summary><Download :size="15" />导出 <ChevronRight :size="14" class="export-chevron" /></summary><button :disabled="!canExport" class="menu-subitem" @click="exportFormat('docx')">Word (.docx)</button><button :disabled="!canExport" class="menu-subitem" @click="exportFormat('pdf')">PDF (.pdf)</button></details>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'edit'" @click="toggleMenu('edit')">编辑</button><div v-if="menu === 'edit'" class="menu-popup">
           <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button><hr /><button @click="searchPanel()"><Search :size="15" />查找 <kbd>Ctrl+F</kbd></button><button @click="searchPanel(true)"><Search :size="15" />替换</button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button><div v-if="menu === 'format'" class="menu-popup">
-          <button :class="{ checked: active?.format === 'markdown' }" @click="changeFormat('markdown')">Markdown</button><button :class="{ checked: active?.format === 'json' }" @click="changeFormat('json')">JSON</button><button :class="{ checked: active?.format === 'csv' }" @click="changeFormat('csv')">CSV</button>
+          <button :class="{ checked: active?.format === 'markdown' }" @click="changeFormat('markdown')">Markdown</button><button :class="{ checked: active?.format === 'json' }" @click="changeFormat('json')">JSON</button><button :class="{ checked: active?.format === 'csv' }" @click="changeFormat('csv')">CSV</button><hr /><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'help'" @click="toggleMenu('help')">帮助</button><div v-if="menu === 'help'" class="menu-popup">
           <button @click="menu = null; settingsOpen = true"><Settings :size="15" />设置</button><button @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
@@ -222,25 +219,19 @@ onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clea
       <div v-if="native" class="window-controls"><button title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()"><Minus :size="16" /></button><button title="最大化或还原" aria-label="最大化或还原" @click="getCurrentWindow().toggleMaximize()"><Square :size="13" /></button><button class="window-close" title="关闭" aria-label="关闭" @click="closeWindow"><X :size="17" /></button></div>
     </div>
     <div class="app-body">
-    <aside v-if="sidebar" class="sidebar">
-      <div class="brand"><img class="brand-logo" src="/znote.svg" alt="zNote" width="35" height="35" /><b>zNote<span class="version"> / 01</span></b></div>
-      <div class="workspace-label">你的文字工作空间</div>
-      <button class="new-button" @click="newNote"><Plus :size="17" /> 新建笔记 <kbd>Ctrl N</kbd></button>
-      <div class="section-title">打开的文档 <span>{{ notes.length }}</span></div>
-      <button v-for="note in notes" :key="note.id" class="document" :class="{ selected: note.id === activeId }" @click="selectNote(note)"><FileText :size="16" /><span>{{ note.name }}</span><span v-if="note.dirty" class="dirty-dot">●</span></button>
+    <aside v-if="headings.length" class="sidebar">
       <div class="section-title outline-title">文档大纲</div>
-      <nav class="outline" aria-label="文档大纲"><button v-for="heading in headings" :key="heading.from" :style="{ paddingLeft: `${12 + (heading.level - 1) * 12}px` }" @click="view?.dispatch({ selection: { anchor: heading.from }, scrollIntoView: true })"><ChevronRight :size="12" />{{ heading.title }}</button><p v-if="!headings.length">{{ large ? '大文件模式已停用大纲' : '使用 # 标题组织你的想法' }}</p></nav>
-      <div class="sidebar-bottom"><span class="local-dot"></span> 本地优先，安心书写 <span>v0.1.0</span></div>
+      <nav class="outline" aria-label="文档大纲"><button v-for="heading in headings" :key="heading.from" :style="{ paddingLeft: `${12 + (heading.level - 1) * 12}px` }" @click="view?.dispatch({ selection: { anchor: heading.from }, scrollIntoView: true })"><ChevronRight :size="12" />{{ heading.title }}</button></nav>
     </aside>
     <main>
-      <header class="toolbar"><div class="toolbar-group"><button :title="sidebar ? '收起侧栏' : '展开侧栏'" @click="sidebar = !sidebar"><PanelLeftClose v-if="sidebar" :size="19" /><PanelLeft v-else :size="19" /></button><span class="divider"></span><button title="新建 Ctrl+N" @click="newNote"><FilePlus2 :size="18" /></button><button title="打开 Ctrl+O" :disabled="busy" @click="openFile"><FolderOpen :size="18" /></button><button title="保存 Ctrl+S" :disabled="busy" @click="saveNote()"><Save :size="18" /></button><button class="save-as" :disabled="busy" @click="saveNote(active, true)">另存为</button><span class="divider"></span><button title="撤销 Ctrl+Z" @click="view && undo(view)"><Undo2 :size="17" /></button><button title="重做 Ctrl+Y" @click="view && redo(view)"><Redo2 :size="17" /></button></div><div class="toolbar-group"><label class="export-control" title="导出当前 Markdown 文档"><Download :size="16" /><select aria-label="导出格式" :disabled="!canExport" value="" @change="exportNote"><option value="" disabled>导出</option><option value="docx">Word (.docx)</option><option value="pdf">PDF (.pdf)</option></select></label><button title="查找与替换 Ctrl+F" @click="view && openSearchPanel(view)"><Search :size="18" /></button><button title="JSON / JSONC 格式化" :disabled="active?.format !== 'json' || busy" @click="formatJson"><Braces :size="18" /></button><span class="divider"></span><button :title="dark ? '切换浅色' : '切换深色'" @click="toggleTheme"><Sun v-if="dark" :size="18" /><Moon v-else :size="18" /></button></div></header>
       <div class="tabs" role="tablist"><div v-for="note in notes" :key="note.id" class="tab" :class="{ active: note.id === activeId }"><button role="tab" :aria-selected="note.id === activeId" @click="selectNote(note)"><FileText :size="14" />{{ note.name }}<span v-if="note.dirty" class="dirty-dot">●</span></button><button class="close-tab" :aria-label="`关闭 ${note.name}`" @click="requestClose(note)"><X :size="13" /></button></div><button class="add-tab" title="新建笔记" @click="newNote"><Plus :size="16" /></button></div>
       <div class="document-bar"><div class="breadcrumb"><span>工作空间</span><ChevronRight :size="13" /><strong :title="active?.path ?? ''">{{ active?.name }}</strong><span v-if="active?.dirty" class="unsaved">未保存</span></div><div class="mode-switch" aria-label="编辑模式"><button :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="14" />源码</button><button :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="14" />原位</button><button :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="14" />分屏</button></div></div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；超过 200 万字符不写恢复草稿，请及时保存。</div>
       <div class="writing-area" :class="{ split: mode === 'split' && !large, live: mode === 'live' && isMarkdown }"><div ref="host" class="editor-host"></div><article v-if="mode === 'split' && !large && isMarkdown" class="preview" @click.prevent v-html="preview"></article><section v-if="mode === 'split' && !large && isCsv" class="preview csv-preview" aria-label="CSV 表格预览"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead><tr><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(1)" :key="rowIndex"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section></div>
-      <footer><span class="status-message" role="status">{{ status }}</span><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select><select aria-label="换行格式" :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select><span>{{ active?.format === 'markdown' ? 'Markdown' : active?.format?.toUpperCase() }}</span></footer>
+      <footer><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
     </main>
     </div>
+    <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
     <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false"><section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapSettings"><header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header><label>外观 <button @click="toggleTheme">{{ dark ? '深色' : '浅色' }}</button></label><label>保存编码 <select :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></label><label>换行格式 <select :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select></label></section></div>
     <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存尚未完成的想法？</h2><p>{{ closePrompt.kind === 'window' ? '有文档尚未保存。关闭之前，可以将它们保存到本机。' : `“${closePrompt.note?.name}”的修改尚未保存。` }}</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
   </div>
