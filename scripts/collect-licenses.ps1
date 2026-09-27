@@ -27,7 +27,9 @@ try {
     $slug = "$($p.kind)-$($p.name)-$($p.version)" -replace '[^a-zA-Z0-9._-]', '_'
     $notices.Add("$($p.kind) $($p.name) $($p.version) | $($p.license) | $($p.repository)".TrimEnd())
     if (-not $p.directory -or -not (Test-Path -LiteralPath $p.directory)) { throw "Missing package directory: $slug" }
-    $files = Get-ChildItem -LiteralPath $p.directory -File | Where-Object { $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE|UNLICENSE)' }
+    $files = Get-ChildItem -LiteralPath $p.directory -File | Where-Object {
+      $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE|UNLICENSE)(?:$|[._-])' -and $_.Extension -notin @('.js', '.mjs', '.cjs')
+    }
     foreach ($file in $files) {
       Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $destination "$slug-$($file.Name)") -Force
       $copied++

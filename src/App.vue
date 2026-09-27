@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import 'katex/dist/katex.min.css';
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, ViewPlugin, type DecorationSet } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
@@ -18,13 +19,14 @@ import { canFormatCode } from './code-format';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { parseCsv } from './csv';
 import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
-import { liveMarkdownDecorations } from './live-markdown';
+import { liveMarkdownBlocks } from './live-markdown';
+import { hydrateDiagrams } from './diagram';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
 function formatForName(name: string): NoteFormat { return /\.md$|\.markdown$/i.test(name) ? 'markdown' : /\.jsonc?$/i.test(name) ? 'json' : /\.csv$/i.test(name) ? 'csv' : 'txt'; }
 interface Note extends NativeDocument { id: number; name: string; format: NoteFormat; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean }
-const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式会收起非当前行的标题、强调、引用及代码围栏标记，并显示分隔线。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
+const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式排版未编辑的 Markdown 块，点击后直接修改源码。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
@@ -79,7 +81,6 @@ const settingsElement = ref<HTMLElement>(); let settingsPreviousFocus: HTMLEleme
 watch(closePrompt, async value => { if (value) { previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; await nextTick(); modalElement.value?.querySelector<HTMLButtonElement>('button')?.focus(); } else { if (previousFocus?.isConnected) previousFocus.focus(); else view?.focus(); } });
 watch(settingsOpen, async value => { if (value) { settingsPreviousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; await nextTick(); settingsElement.value?.querySelector<HTMLButtonElement>('button')?.focus(); } else if (settingsPreviousFocus?.isConnected) settingsPreviousFocus.focus(); });
 function touch() { notes.value = [...notes.value]; }
-const livePlugin = ViewPlugin.fromClass(class { decorations: DecorationSet; constructor(v: EditorView) { this.decorations = liveMarkdownDecorations(v); } update(u: { docChanged: boolean; viewportChanged: boolean; selectionSet: boolean; view: EditorView }) { if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = liveMarkdownDecorations(u.view); } }, { decorations: v => v.decorations });
 function scrollAnchors() {
   if (!view || !previewHost.value) return [{ source: 0, preview: 0 }];
   const sourceMax = Math.max(0, view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight);
@@ -155,7 +156,7 @@ function onPreviewClick(event: MouseEvent) {
 }
 function languageFor(format: NoteFormat, size: number): Extension { return size > 1_000_000 ? [] : format === 'json' ? json() : format === 'markdown' ? markdown({ codeLanguages: languages }) : []; }
 function stateFor(text: string, format: NoteFormat) {
-  return EditorState.create({ doc: text, extensions: [EditorState.phrases.of({ Find: '查找', Replace: '替换', next: '下一个', previous: '上一个', all: '全选匹配', replace: '替换', 'replace all': '全部替换', 'match case': '区分大小写', regexp: '正则表达式', 'by word': '全词匹配', close: '关闭', 'Go to line': '跳转到行', go: '跳转', 'current match': '当前匹配', 'on line': '所在行', 'replaced $ matches': '已替换 $ 处匹配', 'replaced match on line $': '已替换第 $ 行匹配' }), history(), drawSelection(), EditorView.lineWrapping, lineNumbers(), highlightActiveLine(), bracketMatching(), closeBrackets(), search({ top: true }), keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]), theme.of(editorAppearance(dark.value)), language.of(languageFor(format, text.length)), live.of(mode.value === 'live' && format === 'markdown' && text.length <= 1_000_000 ? livePlugin : []), EditorView.updateListener.of(u => {
+  return EditorState.create({ doc: text, extensions: [EditorState.phrases.of({ Find: '查找', Replace: '替换', next: '下一个', previous: '上一个', all: '全选匹配', replace: '替换', 'replace all': '全部替换', 'match case': '区分大小写', regexp: '正则表达式', 'by word': '全词匹配', close: '关闭', 'Go to line': '跳转到行', go: '跳转', 'current match': '当前匹配', 'on line': '所在行', 'replaced $ matches': '已替换 $ 处匹配', 'replaced match on line $': '已替换第 $ 行匹配' }), history(), drawSelection(), EditorView.lineWrapping, lineNumbers(), highlightActiveLine(), bracketMatching(), closeBrackets(), search({ top: true }), keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]), theme.of(editorAppearance(dark.value)), language.of(languageFor(format, text.length)), live.of(mode.value === 'live' && format === 'markdown' && text.length <= 1_000_000 ? liveMarkdownBlocks(dark.value) : []), EditorView.updateListener.of(u => {
     const note = active.value; if (!note) return; note.state = u.state;
     if (u.docChanged) { note.version++; note.dirty = true; touch(); clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshDerived, 280); scheduleRecovery(); }
     if (u.selectionSet || u.docChanged) { const p = u.state.selection.main.head; const line = u.state.doc.lineAt(p); position.value = `行 ${line.number}，列 ${p - line.from + 1}`; count.value = u.state.doc.length; highlightPreviewLine(); }
@@ -167,9 +168,9 @@ function createNote(doc?: NativeDocument, name = '未命名.txt') {
   notes.value = [...notes.value, note]; selectNote(note); return note;
 }
 function selectNote(note: Note) { if (view && active.value) active.value.state = view.state; activeId.value = note.id; view?.setState(note.state); cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); const head = note.state.selection.main.head; const line = note.state.doc.lineAt(head); position.value = `行 ${line.number}，列 ${head - line.from + 1}`; view?.focus(); }
-function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(editorAppearance(dark.value)), language.reconfigure(languageFor(active.value.format, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? livePlugin : [])] }); }
+function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(editorAppearance(dark.value)), language.reconfigure(languageFor(active.value.format, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? liveMarkdownBlocks(dark.value) : [])] }); }
 function changeMode(value: typeof mode.value) { mode.value = value; cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); }
-function setTheme(night: boolean) { dark.value = night; localStorage.setItem('znote-theme', night ? 'dark' : 'light'); reconfigure(); }
+function setTheme(night: boolean) { dark.value = night; localStorage.setItem('znote-theme', night ? 'dark' : 'light'); reconfigure(); refreshDerived(); }
 function refreshDerived() {
   if (!active.value) return; const doc = active.value.state.doc; count.value = doc.length;
   cachedScrollAnchors = null;
@@ -180,7 +181,7 @@ function refreshDerived() {
     if (isCsv.value) { const parsed = parseCsv(text); csvRows.value = parsed.rows; csvRowLines.value = parsed.rowLines; csvError.value = parsed.error; }
     else if (isMarkdown.value) preview.value = renderMarkdown(text);
     else if (isJson.value) jsonRows.value = jsonPreviewRows(text);
-    void nextTick(() => { highlightPreviewLine(); onSourceScroll(); });
+    void nextTick(() => { if (isMarkdown.value && previewHost.value) hydrateDiagrams(previewHost.value, dark.value); highlightPreviewLine(); onSourceScroll(); });
   }
 }
 function newNote() { createNote(); changeMode('source'); status.value = '新建笔记'; }

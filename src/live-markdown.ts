@@ -1,63 +1,77 @@
-import { syntaxTree } from '@codemirror/language';
-import { Decoration, WidgetType, type DecorationSet, type EditorView } from '@codemirror/view';
+import { StateField, type EditorState, type Extension } from '@codemirror/state';
+import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
+import { hydrateDiagrams } from './diagram';
+import { markdownBlocks, type MarkdownBlock } from './preview';
 
-class RuleWidget extends WidgetType {
-  toDOM() {
-    const rule = document.createElement('span');
-    rule.className = 'live-rule';
-    rule.setAttribute('aria-hidden', 'true');
-    return rule;
+class MarkdownBlockWidget extends WidgetType {
+  constructor(readonly block: MarkdownBlock, readonly from: number, readonly dark: boolean) { super(); }
+
+  eq(other: MarkdownBlockWidget) {
+    return this.from === other.from && this.dark === other.dark && this.block.html === other.block.html;
   }
+
+  toDOM(view: EditorView) {
+    const element = document.createElement('div');
+    element.className = 'preview live-rendered';
+    element.tabIndex = 0;
+    element.setAttribute('role', 'button');
+    element.setAttribute('aria-label', '编辑 Markdown 块');
+    element.innerHTML = this.block.html;
+    for (const link of element.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+      link.title = link.getAttribute('href') ?? '';
+      link.removeAttribute('href');
+      link.tabIndex = -1;
+    }
+    const edit = (target?: EventTarget | null) => {
+      const source = target instanceof Element ? target.closest<HTMLElement>('[data-source-start]') : null;
+      const lineNumber = Number(source?.dataset.sourceStart);
+      const anchor = Number.isInteger(lineNumber) && lineNumber >= this.block.startLine && lineNumber <= this.block.endLine
+        ? view.state.doc.line(lineNumber).from : this.from;
+      view.dispatch({ selection: { anchor }, scrollIntoView: true });
+      view.focus();
+    };
+    element.addEventListener('mousedown', event => { event.preventDefault(); edit(event.target); });
+    element.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); }
+    });
+    hydrateDiagrams(element, this.dark);
+    return element;
+  }
+
+  ignoreEvent() { return true; }
 }
 
-const ruleWidget = new RuleWidget();
+interface LiveBlocks { blocks: MarkdownBlock[]; decorations: DecorationSet }
 
-export function liveMarkdownDecorations(view: Pick<EditorView, 'state' | 'visibleRanges'>): DecorationSet {
+function decorate(state: EditorState, blocks: MarkdownBlock[], dark: boolean): DecorationSet {
+  const startLine = state.doc.lineAt(state.selection.main.from).number;
+  const endLine = state.doc.lineAt(state.selection.main.to).number;
   const ranges = [];
-  const doc = view.state.doc;
-  const selection = view.state.selection.main;
-  const selectedFrom = doc.lineAt(selection.from).from;
-  const selectedTo = doc.lineAt(selection.to).to;
-  const isEditing = (from: number, to: number) => from <= selectedTo && to >= selectedFrom;
-
-  for (const { from, to } of view.visibleRanges) {
-    for (let pos = from; pos <= to;) {
-      const line = doc.lineAt(pos);
-      const heading = /^(#{1,6})\s/.exec(line.text);
-      if (heading) ranges.push(Decoration.line({ class: `live-heading live-h${heading[1].length}` }).range(line.from));
-      if (/^\s{0,3}>/.test(line.text)) ranges.push(Decoration.line({ class: 'live-quote' }).range(line.from));
-      pos = line.to + 1;
+  for (const block of blocks) {
+    if (block.endLine >= startLine && block.startLine <= endLine) {
+      const heading = /^<h([1-6])\b/.exec(block.html);
+      if (heading) ranges.push(Decoration.line({ class: `live-heading live-h${heading[1]}` }).range(state.doc.line(block.startLine).from));
+      continue;
     }
-
-    syntaxTree(view.state).iterate({ from, to, enter(node) {
-      if (node.name === 'FencedCode') {
-        const first = doc.lineAt(node.from);
-        const last = doc.lineAt(node.to);
-        const closed = last.from > first.from && /^\s{0,3}(`{3,}|~{3,})\s*$/.test(last.text);
-        for (let number = first.number; number <= last.number; number++) {
-          const line = doc.line(number);
-          if (line.from < from || line.from > to) continue;
-          const edge = number === first.number ? ' live-code-open' : closed && number === last.number ? ` live-code-close${isEditing(last.from, last.to) ? '' : ' live-code-hidden'}` : '';
-          ranges.push(Decoration.line({ class: `live-code${edge}` }).range(line.from));
-        }
-        if (!isEditing(first.from, first.to)) {
-          const language = first.text.replace(/^\s{0,3}(`{3,}|~{3,})/, '').trim();
-          ranges.push(Decoration.line({ attributes: { 'data-language': language || '代码' } }).range(first.from));
-          ranges.push(Decoration.replace({}).range(first.from, first.to));
-        }
-        if (closed && !isEditing(last.from, last.to)) ranges.push(Decoration.replace({}).range(last.from, last.to));
-        return false;
-      }
-      if (node.name === 'HorizontalRule') {
-        const line = doc.lineAt(node.from);
-        if (!isEditing(line.from, line.to)) ranges.push(Decoration.replace({ widget: ruleWidget }).range(line.from, line.to));
-        return false;
-      }
-      if (!['HeaderMark', 'EmphasisMark', 'QuoteMark'].includes(node.name) || isEditing(node.from, node.to)) return;
-      let end = node.to;
-      if ((node.name === 'HeaderMark' || node.name === 'QuoteMark') && doc.sliceString(end, end + 1) === ' ') end++;
-      ranges.push(Decoration.replace({}).range(node.from, end));
-    } });
+    const from = state.doc.line(block.startLine).from;
+    const to = state.doc.line(block.endLine).to;
+    ranges.push(Decoration.replace({ widget: new MarkdownBlockWidget(block, from, dark), block: true }).range(from, to));
   }
   return Decoration.set(ranges, true);
+}
+
+export function liveMarkdownBlocks(dark: boolean): Extension {
+  const field = StateField.define<LiveBlocks>({
+    create(state) {
+      const blocks = markdownBlocks(state.doc.toString());
+      return { blocks, decorations: decorate(state, blocks, dark) };
+    },
+    update(value, transaction) {
+      if (!transaction.docChanged && !transaction.selection) return value;
+      const blocks = transaction.docChanged ? markdownBlocks(transaction.state.doc.toString()) : value.blocks;
+      return { blocks, decorations: decorate(transaction.state, blocks, dark) };
+    },
+    provide: field => EditorView.decorations.from(field, value => value.decorations),
+  });
+  return field;
 }
