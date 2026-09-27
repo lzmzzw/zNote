@@ -5,13 +5,16 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, De
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
+import { languages } from '@codemirror/language-data';
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, syntaxTree } from '@codemirror/language';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { syntaxHighlighting, bracketMatching, syntaxTree, HighlightStyle } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
-import { renderMarkdown, markdownHeadings } from './preview';
+import { renderMarkdown, markdownHeadings, editableCodeFence } from './preview';
+import { canFormatCode } from './code-format';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { parseCsv } from './csv';
 import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
@@ -25,6 +28,18 @@ const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
 const mode = ref<'source' | 'live' | 'split'>('live'); const dark = ref(false);
+const codeColors = (night: boolean) => HighlightStyle.define([
+  { tag: [tags.keyword, tags.operatorKeyword], color: night ? '#c88fd0' : '#8b405d' },
+  { tag: [tags.string, tags.special(tags.string)], color: night ? '#d99586' : '#9c4d35' },
+  { tag: [tags.number, tags.bool, tags.atom], color: night ? '#78c8a9' : '#346c61' },
+  { tag: [tags.comment, tags.meta], color: night ? '#a9afb5' : '#706c68', fontStyle: 'italic' },
+  { tag: [tags.typeName, tags.className, tags.propertyName], color: night ? '#9dc8e4' : '#386884' },
+  { tag: [tags.heading, tags.strong], color: night ? '#dedede' : '#382c2b', fontWeight: 'bold' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.link, color: night ? '#8ecbe7' : '#356c85' },
+]);
+const newsprintCode = codeColors(false); const nightCode = codeColors(true);
+function editorAppearance(night: boolean): Extension { return [EditorView.theme({}, { dark: night }), syntaxHighlighting(night ? nightCode : newsprintCode)]; }
 const status = ref('准备就绪'); const busy = ref(false); const position = ref('行 1，列 1'); const count = ref(0);
 const toast = ref(''); let toastTimer: ReturnType<typeof setTimeout>;
 watch(status, value => { if (value === '准备就绪') return; toast.value = value; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; }, 4000); });
@@ -53,7 +68,7 @@ const theme = new Compartment(); const language = new Compartment(); const live 
 const large = computed(() => (notes.value.find(note => note.id === activeId.value)?.state.doc.length ?? 0) > 1_000_000);
 const canExport = computed(() => !busy.value && !large.value && isMarkdown.value);
 let refreshTimer: ReturnType<typeof setTimeout>; let recoveryTimer: ReturnType<typeof setTimeout>;
-let worker: Worker; let formatId = 0; let pendingFormat: { id: number; note: Note; version: number } | undefined;
+let worker: Worker; let formatId = 0; let pendingFormat: { id: number; note: Note; version: number; format: NoteFormat; from: number; to: number } | undefined;
 let recoveryWrite: Promise<unknown> = Promise.resolve();
 let unlisten: (() => void) | undefined;
 const closePrompt = shallowRef<{ kind: 'tab' | 'window'; note?: Note } | null>(null);
@@ -157,9 +172,9 @@ function onPreviewClick(event: MouseEvent) {
   view.dispatch({ selection: { anchor }, scrollIntoView: true });
   view.focus();
 }
-function languageFor(format: NoteFormat, size: number): Extension { return size > 1_000_000 ? [] : format === 'json' ? json() : format === 'markdown' ? markdown() : []; }
+function languageFor(format: NoteFormat, size: number): Extension { return size > 1_000_000 ? [] : format === 'json' ? json() : format === 'markdown' ? markdown({ codeLanguages: languages }) : []; }
 function stateFor(text: string, format: NoteFormat) {
-  return EditorState.create({ doc: text, extensions: [EditorState.phrases.of({ Find: '查找', Replace: '替换', next: '下一个', previous: '上一个', all: '全选匹配', replace: '替换', 'replace all': '全部替换', 'match case': '区分大小写', regexp: '正则表达式', 'by word': '全词匹配', close: '关闭', 'Go to line': '跳转到行', go: '跳转', 'current match': '当前匹配', 'on line': '所在行', 'replaced $ matches': '已替换 $ 处匹配', 'replaced match on line $': '已替换第 $ 行匹配' }), history(), drawSelection(), EditorView.lineWrapping, lineNumbers(), highlightActiveLine(), bracketMatching(), syntaxHighlighting(defaultHighlightStyle), search({ top: true }), keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]), theme.of(dark.value ? oneDark : []), language.of(languageFor(format, text.length)), live.of(mode.value === 'live' && format === 'markdown' && text.length <= 1_000_000 ? livePlugin : []), EditorView.updateListener.of(u => {
+  return EditorState.create({ doc: text, extensions: [EditorState.phrases.of({ Find: '查找', Replace: '替换', next: '下一个', previous: '上一个', all: '全选匹配', replace: '替换', 'replace all': '全部替换', 'match case': '区分大小写', regexp: '正则表达式', 'by word': '全词匹配', close: '关闭', 'Go to line': '跳转到行', go: '跳转', 'current match': '当前匹配', 'on line': '所在行', 'replaced $ matches': '已替换 $ 处匹配', 'replaced match on line $': '已替换第 $ 行匹配' }), history(), drawSelection(), EditorView.lineWrapping, lineNumbers(), highlightActiveLine(), bracketMatching(), closeBrackets(), search({ top: true }), keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]), theme.of(editorAppearance(dark.value)), language.of(languageFor(format, text.length)), live.of(mode.value === 'live' && format === 'markdown' && text.length <= 1_000_000 ? livePlugin : []), EditorView.updateListener.of(u => {
     const note = active.value; if (!note) return; note.state = u.state;
     if (u.docChanged) { note.version++; note.dirty = true; touch(); clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshDerived, 280); scheduleRecovery(); }
     if (u.selectionSet || u.docChanged) { const p = u.state.selection.main.head; const line = u.state.doc.lineAt(p); position.value = `行 ${line.number}，列 ${p - line.from + 1}`; count.value = u.state.doc.length; highlightPreviewLine(); }
@@ -171,9 +186,9 @@ function createNote(doc?: NativeDocument, name = '未命名.txt') {
   notes.value = [...notes.value, note]; selectNote(note); return note;
 }
 function selectNote(note: Note) { if (view && active.value) active.value.state = view.state; activeId.value = note.id; view?.setState(note.state); cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); const head = note.state.selection.main.head; const line = note.state.doc.lineAt(head); position.value = `行 ${line.number}，列 ${head - line.from + 1}`; view?.focus(); }
-function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(dark.value ? oneDark : []), language.reconfigure(languageFor(active.value.format, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? livePlugin : [])] }); }
+function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(editorAppearance(dark.value)), language.reconfigure(languageFor(active.value.format, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? livePlugin : [])] }); }
 function changeMode(value: typeof mode.value) { mode.value = value; cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); }
-function toggleTheme() { dark.value = !dark.value; localStorage.setItem('znote-theme', dark.value ? 'dark' : 'light'); reconfigure(); }
+function setTheme(night: boolean) { dark.value = night; localStorage.setItem('znote-theme', night ? 'dark' : 'light'); reconfigure(); }
 function refreshDerived() {
   if (!active.value) return; const doc = active.value.state.doc; count.value = doc.length;
   cachedScrollAnchors = null;
@@ -225,7 +240,20 @@ async function resolveClose(action: 'save' | 'discard' | 'cancel') {
   closePrompt.value = null;
   if (prompt.kind === 'tab') removeNote(prompt.note!); else { try { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } catch (e) { status.value = String(e); } }
 }
-function formatJson() { const note = active.value; if (!note || busy.value || note.format !== 'json') return; if (note.state.doc.length > 1_000_000) { status.value = '大文件模式下暂不格式化'; return; } const id = ++formatId; pendingFormat = { id, note, version: note.version }; status.value = '正在格式化…'; worker.postMessage({ id, text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) }); }
+function formatJson() { const note = active.value; if (!note || busy.value || note.format !== 'json') return; if (note.state.doc.length > 1_000_000) { status.value = '大文件模式下暂不格式化'; return; } const id = ++formatId; pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length }; status.value = '正在格式化…'; worker.postMessage({ id, kind: 'json', text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) }); }
+function formatCodeFence() {
+  menu.value = null;
+  const note = active.value; if (!note || !view || note.format !== 'markdown' || busy.value) return;
+  if (note.state.doc.length > 1_000_000) { status.value = '大文件模式下暂不格式化'; return; }
+  const doc = note.state.doc;
+  const fence = editableCodeFence(doc.toString(), doc.lineAt(view.state.selection.main.head).number);
+  if (!fence) { status.value = '请将光标放在独立的代码围栏中'; return; }
+  if (!canFormatCode(fence.language)) { status.value = `暂不支持格式化 ${fence.language || '无语言标记'} 代码块`; return; }
+  const from = doc.line(fence.firstContentLine).from; const to = doc.line(fence.closingLine).from;
+  const id = ++formatId; pendingFormat = { id, note, version: note.version, format: note.format, from, to };
+  status.value = '正在格式化代码…';
+  worker.postMessage({ id, kind: 'code', language: fence.language, text: doc.sliceString(from, to) });
+}
 function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   const note = active.value; menu.value = null; if (!note) return;
   note.format = format;
@@ -283,7 +311,7 @@ onMounted(async () => {
   view = new EditorView({ state: active.value!.state, parent: host.value }); view.scrollDOM.addEventListener('scroll', onSourceScroll); refreshDerived();
   const gutters = view.dom.querySelector<HTMLElement>('.cm-gutters');
   if (gutters) { gutterObserver = new ResizeObserver(() => { gutterWidth.value = gutters.getBoundingClientRect().width; }); gutterObserver.observe(gutters); gutterWidth.value = gutters.getBoundingClientRect().width; }
-  worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' }); worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => { const pending = pendingFormat; if (!pending || data.id !== pending.id) return; pendingFormat = undefined; if (pending.note.version !== pending.version || !notes.value.includes(pending.note)) { status.value = '内容已变化，已忽略过期格式化结果'; return; } if (data.error) { status.value = data.error; return; } const changes = { from: 0, to: pending.note.state.doc.length, insert: data.text! }; if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' }); else { pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state; pending.note.version++; pending.note.dirty = true; touch(); scheduleRecovery(); } status.value = '已格式化 · Ctrl + Z 可撤销'; };
+  worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' }); worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => { const pending = pendingFormat; if (!pending || data.id !== pending.id) return; pendingFormat = undefined; if (pending.note.version !== pending.version || pending.note.format !== pending.format || !notes.value.includes(pending.note)) { status.value = '内容已变化，已忽略过期格式化结果'; return; } if (data.error) { status.value = data.error; return; } const changes = { from: pending.from, to: pending.to, insert: data.text! }; if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' }); else { pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state; pending.note.version++; pending.note.dirty = true; touch(); scheduleRecovery(); } status.value = '已格式化 · Ctrl + Z 可撤销'; };
   window.addEventListener('keydown', shortcuts); window.addEventListener('beforeunload', beforeUnload);
   if (native) { unlisten = await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); if (notes.value.some(n => n.dirty)) closePrompt.value = { kind: 'window' }; else { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } });
     try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; reconfigure(); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
@@ -304,7 +332,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
           <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button><hr /><button @click="searchPanel()"><Search :size="15" />查找 <kbd>Ctrl+F</kbd></button><button @click="searchPanel(true)"><Search :size="15" />替换</button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button><div v-if="menu === 'format'" class="menu-popup">
-          <button :class="{ checked: active?.format === 'markdown' }" @click="changeFormat('markdown')">Markdown</button><button :class="{ checked: active?.format === 'json' }" @click="changeFormat('json')">JSON</button><button :class="{ checked: active?.format === 'csv' }" @click="changeFormat('csv')">CSV</button><hr /><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button>
+          <button :class="{ checked: active?.format === 'markdown' }" @click="changeFormat('markdown')">Markdown</button><button :class="{ checked: active?.format === 'json' }" @click="changeFormat('json')">JSON</button><button :class="{ checked: active?.format === 'csv' }" @click="changeFormat('csv')">CSV</button><hr /><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button><button :disabled="active?.format !== 'markdown' || busy || large" @click="formatCodeFence()"><Code2 :size="15" />格式化代码块</button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'help'" @click="toggleMenu('help')">帮助</button><div v-if="menu === 'help'" class="menu-popup">
           <button @click="menu = null; settingsOpen = true"><Settings :size="15" />设置</button><button @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
@@ -343,7 +371,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
     </main>
     </div>
     <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
-    <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false"><section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapSettings"><header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header><label>外观 <button @click="toggleTheme">{{ dark ? '深色' : '浅色' }}</button></label><label>保存编码 <select :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></label><label>换行格式 <select :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select></label></section></div>
+    <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false"><section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapSettings"><header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header><div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Newsprint</button><button :aria-pressed="dark" @click="setTheme(true)">Night</button></div></div><label>保存编码 <select :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></label><label>换行格式 <select :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select></label></section></div>
     <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存尚未完成的想法？</h2><p>{{ closePrompt.kind === 'window' ? '有文档尚未保存。关闭之前，可以将它们保存到本机。' : `“${closePrompt.note?.name}”的修改尚未保存。` }}</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
   </div>
 </template>

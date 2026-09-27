@@ -20,3 +20,22 @@ footer select{background:transparent;color:var(--muted);border:0;font:inherit;ma
 .outline .outline-empty{margin:0;padding:8px 0;color:var(--muted)}
 footer .outline-toggle{height:24px;flex:none;padding:0;margin-left:-19px;margin-right:auto;color:var(--muted);border-radius:3px}
 footer .outline-toggle:hover{color:var(--accent)}
+.app{--bg:#f3f2ee;--panel:#eae8e2;--text:#1f0909;--muted:#696662;--border:#d8d5ce;--accent:#365d70;--hover:#e3e0d8;--selected:#d9e1e1;--code-bg:#e7e5df;--heading:#2c2422;--quote:#68625d;--selection:#7999aa55;color-scheme:light}
+.app.dark{--bg:#363b40;--panel:#2e3033;--text:#b8bfc6;--muted:#a4abb1;--border:#515962;--accent:#6dc1e7;--hover:#454c53;--selected:#435767;--code-bg:#303438;--heading:#dedede;--quote:#a6adb4;--selection:#4a89dc77;color-scheme:dark}
+.cm-activeLine{background:var(--selected)!important}
+.cm-selectionBackground{background:var(--selection)!important}
+.live-heading{color:var(--heading)!important}
+.preview{font-family:Georgia,"Songti SC","SimSun",serif;color:var(--text);line-height:1.7}
+.preview h1,.preview h2,.preview h3,.preview h4,.preview h5,.preview h6{color:var(--heading);line-height:1.35}
+.preview h1{border-bottom:1px solid var(--border);padding-bottom:9px}
+.preview blockquote{border-color:var(--border);color:var(--quote)}
+.preview pre{background:var(--code-bg);border:1px solid var(--border);border-radius:3px;line-height:1.55}
+.preview pre code{display:block;background:transparent;padding:0;font-family:"Cascadia Code",Consolas,monospace;font-size:12px;color:var(--text)}
+.preview :not(pre)>code{background:var(--code-bg);padding:2px 4px;border-radius:2px;font-family:"Cascadia Code",Consolas,monospace;font-size:.9em}
+.preview .hljs-keyword,.preview .hljs-selector-tag{color:#8b405d}.preview .hljs-string,.preview .hljs-attr{color:#9c4d35}.preview .hljs-number,.preview .hljs-literal{color:#346c61}.preview .hljs-comment{color:#706c68;font-style:italic}.preview .hljs-title,.preview .hljs-type,.preview .hljs-built_in{color:#386884}
+.app.dark .preview .hljs-keyword,.app.dark .preview .hljs-selector-tag{color:#c88fd0}.app.dark .preview .hljs-string,.app.dark .preview .hljs-attr{color:#d99586}.app.dark .preview .hljs-number,.app.dark .preview .hljs-literal{color:#78c8a9}.app.dark .preview .hljs-comment{color:#a9afb5}.app.dark .preview .hljs-title,.app.dark .preview .hljs-type,.app.dark .preview .hljs-built_in{color:#9dc8e4}
+.json-string{color:#9c4d35}.json-number,.json-boolean{color:#346c61}.app.dark .json-string{color:#d99586}.app.dark .json-number,.app.dark .json-boolean{color:#78c8a9}
+.theme-setting{display:flex;align-items:center;justify-content:space-between;margin-top:18px}
+.theme-options{display:flex;gap:2px;background:var(--panel);padding:3px;border:1px solid var(--border);border-radius:4px}
+.settings-modal .theme-options button{min-width:92px;padding:6px 8px;border:0;border-radius:2px;color:var(--muted);background:transparent;justify-content:center}
+.settings-modal .theme-options button[aria-pressed="true"]{background:var(--bg);color:var(--text);box-shadow:0 1px 3px #0002}
