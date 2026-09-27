@@ -1,0 +1,8 @@
+.csv-preview { padding: 20px 24px 80px; }
+.csv-table-wrap { width: 100%; overflow: auto; }
+.csv-preview table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; line-height: 1.5; }
+.csv-preview th, .csv-preview td { min-width: 100px; max-width: 360px; padding: 8px 12px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+.csv-preview th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--text); font-weight: 600; }
+.csv-preview tbody tr:nth-child(even) { background: var(--panel); }
+.csv-error { color: #b34437; }
+.csv-empty { color: var(--muted); }

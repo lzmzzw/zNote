@@ -10,8 +10,9 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, syntaxTree 
 import { oneDark } from '@codemirror/theme-one-dark';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { FilePlus2, FolderOpen, Save, Download, Search, Moon, Sun, PanelLeftClose, PanelLeft, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Undo2, Redo2, NotebookPen } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, Moon, Sun, PanelLeftClose, PanelLeft, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, Undo2, Redo2 } from 'lucide-vue-next';
 import { renderMarkdown } from './preview';
+import { parseCsv } from './csv';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 interface Note extends NativeDocument { id: number; name: string; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean }
@@ -22,6 +23,8 @@ const host = ref<HTMLElement>(); let view: EditorView | undefined;
 const mode = ref<'source' | 'live' | 'split'>('live'); const dark = ref(false); const sidebar = ref(true);
 const status = ref('准备就绪'); const busy = ref(false); const position = ref('行 1，列 1'); const count = ref(0);
 const preview = ref(''); const headings = ref<{ title: string; from: number; level: number }[]>([]);
+const csvRows = ref<string[][]>([]); const csvError = ref<string | null>(null);
+const isCsv = computed(() => /\.csv$/i.test(active.value?.name ?? ''));
 const theme = new Compartment(); const language = new Compartment(); const live = new Compartment();
 const large = computed(() => (active.value?.state.doc.length ?? 0) > 1_000_000);
 const canExport = computed(() => !busy.value && !large.value && /\.md$|\.markdown$/i.test(active.value?.name ?? ''));
@@ -55,7 +58,7 @@ function liveDecorations(v: EditorView) {
   return Decoration.set(ranges, true);
 }
 const livePlugin = ViewPlugin.fromClass(class { decorations: DecorationSet; constructor(v: EditorView) { this.decorations = liveDecorations(v); } update(u: { docChanged: boolean; viewportChanged: boolean; selectionSet: boolean; view: EditorView }) { if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = liveDecorations(u.view); } }, { decorations: v => v.decorations });
-function languageFor(name: string, size: number): Extension { return size > 1_000_000 ? [] : /\.jsonc?$/i.test(name) ? json() : markdown(); }
+function languageFor(name: string, size: number): Extension { return size > 1_000_000 || /\.csv$/i.test(name) ? [] : /\.jsonc?$/i.test(name) ? json() : markdown(); }
 function stateFor(text: string, name: string) {
   return EditorState.create({ doc: text, extensions: [EditorState.phrases.of({ Find: '查找', Replace: '替换', next: '下一个', previous: '上一个', all: '全选匹配', replace: '替换', 'replace all': '全部替换', 'match case': '区分大小写', regexp: '正则表达式', 'by word': '全词匹配', close: '关闭', 'Go to line': '跳转到行', go: '跳转', 'current match': '当前匹配', 'on line': '所在行', 'replaced $ matches': '已替换 $ 处匹配', 'replaced match on line $': '已替换第 $ 行匹配' }), history(), drawSelection(), EditorView.lineWrapping, lineNumbers(), highlightActiveLine(), bracketMatching(), syntaxHighlighting(defaultHighlightStyle), search({ top: true }), keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]), theme.of(dark.value ? oneDark : []), language.of(languageFor(name, text.length)), live.of(mode.value === 'live' && text.length <= 1_000_000 ? livePlugin : []), EditorView.updateListener.of(u => {
     const note = active.value; if (!note) return; note.state = u.state;
@@ -68,15 +71,18 @@ function createNote(doc?: NativeDocument, name = '未命名.md') {
   notes.value = [...notes.value, note]; selectNote(note); return note;
 }
 function selectNote(note: Note) { if (view && active.value) active.value.state = view.state; activeId.value = note.id; view?.setState(note.state); reconfigure(); refreshDerived(); view?.focus(); }
-function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(dark.value ? oneDark : []), language.reconfigure(languageFor(active.value.name, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value ? livePlugin : [])] }); }
+function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(dark.value ? oneDark : []), language.reconfigure(languageFor(active.value.name, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value && !isCsv.value ? livePlugin : [])] }); }
 function changeMode(value: typeof mode.value) { mode.value = value; reconfigure(); refreshDerived(); }
 function toggleTheme() { dark.value = !dark.value; localStorage.setItem('znote-theme', dark.value ? 'dark' : 'light'); reconfigure(); }
 function refreshDerived() {
   if (!active.value) return; const doc = active.value.state.doc; count.value = doc.length;
-  if (doc.length > 1_000_000) { headings.value = []; preview.value = ''; reconfigure(); return; }
+  if (doc.length > 1_000_000) { headings.value = []; preview.value = ''; csvRows.value = []; csvError.value = null; reconfigure(); return; }
   const text = doc.toString(); active.value.dirty = active.value.metaDirty || text !== active.value.saved; touch();
-  headings.value = []; for (let i = 1; i <= doc.lines; i++) { const l = doc.line(i); const m = /^(#{1,6})\s+(.+)/.exec(l.text); if (m) headings.value.push({ title: m[2], from: l.from, level: m[1].length }); }
-  if (mode.value === 'split') preview.value = renderMarkdown(text);
+  headings.value = []; if (!isCsv.value) for (let i = 1; i <= doc.lines; i++) { const l = doc.line(i); const m = /^(#{1,6})\s+(.+)/.exec(l.text); if (m) headings.value.push({ title: m[2], from: l.from, level: m[1].length }); }
+  if (mode.value === 'split') {
+    if (isCsv.value) { const parsed = parseCsv(text); csvRows.value = parsed.rows; csvError.value = parsed.error; }
+    else preview.value = renderMarkdown(text);
+  }
 }
 function newNote() { createNote(); status.value = '新建笔记'; }
 async function openFile() { if (!native) { status.value = '浏览器预览模式：本地打开与保存请使用桌面版'; return; } busy.value = true; try { const doc = await invoke<NativeDocument | null>('native_open'); if (doc) { const existing = notes.value.find(n => n.path === doc.path); if (existing) selectNote(existing); else createNote(doc); status.value = '文件已打开'; } } catch (e) { status.value = String(e); } finally { busy.value = false; } }
@@ -149,7 +155,7 @@ onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clea
 <template>
   <div class="app" :class="{ dark }">
     <aside v-if="sidebar" class="sidebar">
-      <div class="brand"><span class="brand-icon"><NotebookPen :size="22" /></span><b>zNote<span class="version"> / 01</span></b></div>
+      <div class="brand"><img class="brand-logo" src="/znote.svg" alt="zNote" width="35" height="35" /><b>zNote<span class="version"> / 01</span></b></div>
       <div class="workspace-label">你的文字工作空间</div>
       <button class="new-button" @click="newNote"><Plus :size="17" /> 新建笔记 <kbd>Ctrl N</kbd></button>
       <div class="section-title">打开的文档 <span>{{ notes.length }}</span></div>
@@ -163,8 +169,8 @@ onBeforeUnmount(() => { view?.destroy(); worker?.terminate(); unlisten?.(); clea
       <div class="tabs" role="tablist"><div v-for="note in notes" :key="note.id" class="tab" :class="{ active: note.id === activeId }"><button role="tab" :aria-selected="note.id === activeId" @click="selectNote(note)"><FileText :size="14" />{{ note.name }}<span v-if="note.dirty" class="dirty-dot">●</span></button><button class="close-tab" :aria-label="`关闭 ${note.name}`" @click="requestClose(note)"><X :size="13" /></button></div><button class="add-tab" title="新建笔记" @click="newNote"><Plus :size="16" /></button></div>
       <div class="document-bar"><div class="breadcrumb"><span>工作空间</span><ChevronRight :size="13" /><strong :title="active?.path ?? ''">{{ active?.name }}</strong><span v-if="active?.dirty" class="unsaved">未保存</span></div><div class="mode-switch" aria-label="编辑模式"><button :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="14" />源码</button><button :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="14" />原位</button><button :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="14" />分屏</button></div></div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；超过 200 万字符不写恢复草稿，请及时保存。</div>
-      <div class="writing-area" :class="{ split: mode === 'split' && !large, live: mode === 'live' }"><div ref="host" class="editor-host"></div><article v-if="mode === 'split' && !large" class="preview" @click.prevent v-html="preview"></article></div>
-      <footer><span class="status-message" role="status">{{ status }}</span><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select><select aria-label="换行格式" :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select><span>{{ /\.jsonc?$/i.test(active?.name ?? '') ? 'JSON' : 'Markdown' }}</span></footer>
+      <div class="writing-area" :class="{ split: mode === 'split' && !large, live: mode === 'live' && !isCsv }"><div ref="host" class="editor-host"></div><article v-if="mode === 'split' && !large && !isCsv" class="preview" @click.prevent v-html="preview"></article><section v-if="mode === 'split' && !large && isCsv" class="preview csv-preview" aria-label="CSV 表格预览"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead><tr><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(1)" :key="rowIndex"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section></div>
+      <footer><span class="status-message" role="status">{{ status }}</span><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select><select aria-label="换行格式" :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select><span>{{ isCsv ? 'CSV' : /\.jsonc?$/i.test(active?.name ?? '') ? 'JSON' : 'Markdown' }}</span></footer>
     </main>
     <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存尚未完成的想法？</h2><p>{{ closePrompt.kind === 'window' ? '有文档尚未保存。关闭之前，可以将它们保存到本机。' : `“${closePrompt.note?.name}”的修改尚未保存。` }}</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
   </div>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">znote</title>
+  <rect width="512" height="512" rx="78" fill="#521D96"/>
+  <path d="M147 133H406Q431 133 431 158V412Q431 437 406 437H171Q157 437 147 428L119 403V158Q119 133 147 133Z" fill="#C6B4DE"/>
+  <path d="M127 86H323L380 143V382Q380 406 356 406H127Q103 406 103 382V110Q103 86 127 86Z" fill="#FFFFFF"/>
+  <path d="M286 86H323L380 143V163H286Z" fill="#CAB8E0"/>
+  <path d="M323 86L380 143H323Z" fill="#B9A2D7"/>
+  <path d="M158 193H329V227H158ZM158 252H329V285H158ZM158 310H329V343H158Z" fill="#521D96"/>
+</svg>
