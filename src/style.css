@@ -40,6 +40,9 @@ footer .outline-toggle:hover{color:var(--accent)}
 .theme-options{display:flex;gap:2px;background:var(--panel);padding:3px;border:1px solid var(--border);border-radius:4px}
 .settings-modal .theme-options button{min-width:92px;padding:6px 8px;border:0;border-radius:2px;color:var(--muted);background:transparent;justify-content:center}
 .settings-modal .theme-options button[aria-pressed="true"]{background:var(--bg);color:var(--text);box-shadow:0 1px 3px #0002}
+.settings-modal header button{padding:0;flex:none}
+.csv-settings-modal input:not([type="checkbox"]){width:130px;padding:7px 10px;background:var(--panel);border:1px solid var(--border);border-radius:4px;color:var(--text);font:inherit}
+.csv-settings-modal .csv-setting-toggle input{width:16px;height:16px;margin:0 6px;accent-color:var(--accent)}
 .live-quote{color:var(--quote);border-left:3px solid var(--border);padding-left:14px!important}
 .live-code{background:var(--code-bg);padding-left:12px!important;padding-right:12px!important}
 .live-code-open{border-top:1px solid var(--border);border-radius:3px 3px 0 0}
