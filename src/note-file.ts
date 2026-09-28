@@ -15,6 +15,6 @@ export function conversionMenuState(path: string | null): ConversionMenuState {
   return 'hidden';
 }
 
-export function needsSave(path: string | null, dirty: boolean, requiresSaveAs: boolean): boolean {
-  return path === null || dirty || requiresSaveAs;
+export function needsSave(path: string | null, dirty: boolean): boolean {
+  return path === null || dirty;
 }

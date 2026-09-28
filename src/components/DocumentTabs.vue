@@ -32,14 +32,14 @@ function auxClick(event: MouseEvent, note: Note) {
         <button
           role="tab"
           :aria-selected="note.id === activeId"
-          :aria-label="`${note.name}，${needsSave(note.path, note.dirty, note.requiresSaveAs) ? '未保存' : '已保存'}`"
+          :aria-label="`${note.name}，${needsSave(note.path, note.dirty) ? '未保存' : '已保存'}`"
           :title="note.name"
           @click="emit('select', note)"
         >
           <component
             :is="icons[note.format]"
             class="file-icon"
-            :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }"
+            :class="{ unsaved: needsSave(note.path, note.dirty) }"
             :size="15"
             aria-hidden="true"
           />

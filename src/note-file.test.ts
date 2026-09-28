@@ -25,10 +25,10 @@ describe('file presentation rules', () => {
     }
   });
 
-  it('marks new, modified, and save-as documents as unsaved', () => {
-    expect(needsSave(null, false, false)).toBe(true);
-    expect(needsSave('C:\\notes\\saved.md', true, false)).toBe(true);
-    expect(needsSave('C:\\notes\\associated.md', false, true)).toBe(true);
-    expect(needsSave('C:\\notes\\saved.md', false, false)).toBe(false);
+  it('marks only new or modified documents as unsaved', () => {
+    expect(needsSave(null, false)).toBe(true);
+    expect(needsSave('C:\\notes\\saved.md', true)).toBe(true);
+    expect(needsSave('C:\\notes\\associated.md', false)).toBe(false);
+    expect(needsSave('C:\\notes\\saved.md', false)).toBe(false);
   });
 });

@@ -37,6 +37,7 @@ export interface Note extends Omit<NativeDocument, 'text'> {
   metaDirty: boolean;
   requiresSaveAs: boolean;
   csvOptions: CsvOptions;
+  csvColumnWidths: number[];
   scrollTop: number;
   scrollLeft: number;
   previewScrollTop: number;

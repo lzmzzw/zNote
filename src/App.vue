@@ -118,6 +118,56 @@ function goToHeading(heading: OutlineNode) {
 const csvRows = ref<string[][]>([]);
 const csvRowLines = ref<{ start: number; end: number }[]>([]);
 const csvError = ref<string | null>(null);
+const csvColumnCount = computed(() => csvRows.value.reduce((count, row) => Math.max(count, row.length), 0));
+const csvWidths = computed(() => {
+  const widths = notes.value.find((note) => note.id === activeId.value)?.csvColumnWidths ?? [];
+  return widths.length === csvColumnCount.value ? widths : [];
+});
+let csvResize: { note: Note; column: number; startX: number; widths: number[] } | undefined;
+function currentCsvWidths(cells: HTMLCollectionOf<HTMLTableCellElement>) {
+  return csvWidths.value.length
+    ? [...csvWidths.value]
+    : [...cells].map((cell) => Math.min(1200, Math.max(80, Math.round(cell.getBoundingClientRect().width || 160))));
+}
+function stopCsvResize() {
+  csvResize = undefined;
+  window.removeEventListener('pointermove', moveCsvResize);
+  window.removeEventListener('pointerup', stopCsvResize);
+  window.removeEventListener('pointercancel', stopCsvResize);
+}
+function moveCsvResize(event: PointerEvent) {
+  if (!csvResize) return;
+  const { note, column, startX, widths } = csvResize;
+  if (active.value !== note) return stopCsvResize();
+  note.csvColumnWidths = [...widths];
+  note.csvColumnWidths[column] = Math.max(
+    80,
+    Math.min(1200, Math.round(widths[column] + event.clientX - startX)),
+  );
+  touch();
+  scheduleRecovery();
+}
+function startCsvResize(event: PointerEvent, column: number) {
+  const note = active.value;
+  const cells = previewHost.value?.querySelector<HTMLTableElement>('.csv-table-wrap table')?.rows[0]?.cells;
+  if (!note || !cells || column >= cells.length) return;
+  stopCsvResize();
+  const widths = currentCsvWidths(cells);
+  csvResize = { note, column, startX: event.clientX, widths };
+  window.addEventListener('pointermove', moveCsvResize);
+  window.addEventListener('pointerup', stopCsvResize);
+  window.addEventListener('pointercancel', stopCsvResize);
+}
+function nudgeCsvColumn(column: number, amount: number) {
+  const note = active.value;
+  const cells = previewHost.value?.querySelector<HTMLTableElement>('.csv-table-wrap table')?.rows[0]?.cells;
+  if (!note || !cells || column >= cells.length) return;
+  const widths = currentCsvWidths(cells);
+  widths[column] = Math.max(80, Math.min(1200, widths[column] + amount));
+  note.csvColumnWidths = widths;
+  touch();
+  scheduleRecovery();
+}
 const jsonRows = ref<JsonPreviewRow[]>([]);
 const previewHost = ref<HTMLElement>();
 const previewSync = createPreviewSync(
@@ -598,6 +648,7 @@ function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.ma
     metaDirty: false,
     requiresSaveAs: false,
     csvOptions: defaultCsvOptions(),
+    csvColumnWidths: [],
     scrollTop: 0,
     scrollLeft: 0,
     previewScrollTop: 0,
@@ -607,6 +658,7 @@ function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.ma
   return note;
 }
 function selectNote(note: Note) {
+  stopCsvResize();
   if (view && active.value && active.value !== note) {
     active.value.state = view.state;
     captureScroll();
@@ -650,6 +702,7 @@ function reconfigure() {
   });
 }
 function changeMode(value: DisplayMode) {
+  stopCsvResize();
   mode.value = value;
   if (active.value) active.value.mode = value;
   previewSync.reset();
@@ -847,7 +900,7 @@ function advanceCloseQueue() {
     const id = closeQueue.shift();
     const note = notes.value.find((n) => n.id === id);
     if (!note) continue;
-    if (needsSave(note.path, note.dirty, note.requiresSaveAs)) {
+    if (needsSave(note.path, note.dirty)) {
       closePrompt.value = { note };
       return;
     }
@@ -1038,6 +1091,7 @@ async function persistRecovery(excludeId?: number): Promise<boolean> {
       metaDirty: n.metaDirty,
       requiresSaveAs: n.requiresSaveAs,
       csvOptions: { ...n.csvOptions },
+      csvColumnWidths: [...n.csvColumnWidths],
       scrollTop: n.scrollTop,
       scrollLeft: n.scrollLeft,
       previewScrollTop: n.previewScrollTop,
@@ -1240,6 +1294,7 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
+  stopCsvResize();
   gutterObserver?.disconnect();
   view?.scrollDOM.removeEventListener('scroll', onSourceScroll);
   view?.destroy();
@@ -1455,10 +1510,11 @@ onBeforeUnmount(() => {
           >
             <p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p>
             <div v-if="csvRows.length" class="csv-table-wrap">
-              <table>
+              <table :class="{ 'csv-resized': csvWidths.length }" :style="csvWidths.length ? { width: `${csvWidths.reduce((sum, width) => sum + width, 0)}px`, minWidth: '0' } : undefined">
+                <colgroup><col v-for="index in csvColumnCount" :key="index" :style="csvWidths[index - 1] ? { width: `${csvWidths[index - 1]}px` } : undefined" /></colgroup>
                 <thead v-if="active?.csvOptions.firstRowHeader">
                   <tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end">
-                    <th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th>
+                    <th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}<span class="csv-resize-handle" role="separator" aria-orientation="vertical" tabindex="0" :aria-label="`调整第 ${index + 1} 列宽度`" @pointerdown.stop.prevent="startCsvResize($event, index)" @keydown.left.stop.prevent="nudgeCsvColumn(index, -16)" @keydown.right.stop.prevent="nudgeCsvColumn(index, 16)" @click.stop></span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1468,7 +1524,7 @@ onBeforeUnmount(() => {
                     :data-source-start="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.start"
                     :data-source-end="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.end"
                   >
-                    <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td>
+                    <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}<span v-if="!active?.csvOptions.firstRowHeader && rowIndex === 0" class="csv-resize-handle" role="separator" aria-orientation="vertical" tabindex="0" :aria-label="`调整第 ${cellIndex + 1} 列宽度`" @pointerdown.stop.prevent="startCsvResize($event, cellIndex)" @keydown.left.stop.prevent="nudgeCsvColumn(cellIndex, -16)" @keydown.right.stop.prevent="nudgeCsvColumn(cellIndex, 16)" @click.stop></span></td>
                   </tr>
                 </tbody>
               </table>

@@ -19,6 +19,7 @@ export interface SessionNote {
   requiresSaveAs: boolean;
   editor: ReturnType<EditorState['toJSON']>;
   csvOptions: CsvOptions;
+  csvColumnWidths: number[];
   scrollTop: number;
   scrollLeft: number;
   previewScrollTop: number;
@@ -59,6 +60,7 @@ export function parseSession(data: unknown): Session | null {
         requiresSaveAs: false,
         editor: { doc: doc.text, selection: { ranges: [{ anchor: 0, head: 0 }], main: 0 } },
         csvOptions: defaultCsvOptions(),
+        csvColumnWidths: [],
         scrollTop: 0,
         scrollLeft: 0,
         previewScrollTop: 0,
@@ -76,6 +78,7 @@ export function parseSession(data: unknown): Session | null {
     throw new Error('会话格式无效');
   for (const note of session.notes) {
     if (note && note.markdownWidth === undefined) note.markdownWidth = 'standard';
+    if (note && note.csvColumnWidths === undefined) note.csvColumnWidths = [];
     if (
       !note ||
       typeof note.name !== 'string' ||
@@ -100,7 +103,9 @@ export function parseSession(data: unknown): Session | null {
       !['"', '\\'].includes(note.csvOptions.escapeChar) ||
       typeof note.csvOptions.customDelimiter !== 'string' ||
       typeof note.csvOptions.firstRowHeader !== 'boolean' ||
-      typeof note.csvOptions.skipEmptyLines !== 'boolean'
+      typeof note.csvOptions.skipEmptyLines !== 'boolean' ||
+      !Array.isArray(note.csvColumnWidths) ||
+      !note.csvColumnWidths.every((width) => Number.isFinite(width) && width >= 80 && width <= 1200)
     )
       throw new Error('标签状态无效');
   }

@@ -4,14 +4,14 @@ import { createApp, nextTick, type App as VueApp } from 'vue';
 import { EditorView } from '@codemirror/view';
 import App from './App.vue';
 
-const bridge = vi.hoisted(() => ({ data: null as unknown, close: undefined as undefined | ((event: { preventDefault(): void }) => Promise<void>), destroy: vi.fn(), fail: false, open: null as unknown, maximized: false, resized: undefined as undefined | (() => void) }));
+const bridge = vi.hoisted(() => ({ data: null as unknown, close: undefined as undefined | ((event: { preventDefault(): void }) => Promise<void>), destroy: vi.fn(), fail: false, open: null as unknown, requests: [] as unknown[], saveArgs: null as unknown, maximized: false, resized: undefined as undefined | (() => void) }));
 const updater = vi.hoisted(() => ({ check: vi.fn(), downloadAndInstall: vi.fn(), relaunch: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(async (command: string, args?: { data?: unknown }) => {
   if (command === 'recovery_load') return bridge.data;
   if (command === 'recovery_save') { if (bridge.fail) throw new Error('disk full'); bridge.data = JSON.parse(JSON.stringify(args?.data)); }
-  if (command === 'native_take_open_requests') return { documents: [], errors: [] };
+  if (command === 'native_take_open_requests') return { documents: bridge.requests.splice(0), errors: [] };
   if (command === 'native_open') return bridge.open;
-  if (command === 'native_save') return null;
+  if (command === 'native_save') { bridge.saveArgs = args; return null; }
 }) }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: async (handler: typeof bridge.close) => { bridge.close = handler; return () => {}; }, onResized: async (handler: () => void) => { bridge.resized = handler; return () => {}; }, isMaximized: async () => bridge.maximized, toggleMaximize: async () => { bridge.maximized = !bridge.maximized; bridge.resized?.(); }, destroy: bridge.destroy }) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
@@ -27,7 +27,7 @@ function key(value: string) { window.dispatchEvent(new KeyboardEvent('keydown', 
 function editor() { return EditorView.findFromDOM(root.querySelector('.cm-editor')!)!; }
 async function close() { await bridge.close!({ preventDefault: vi.fn() }); }
 beforeEach(() => {
-  bridge.data = null; bridge.fail = false; bridge.open = null; bridge.maximized = false; bridge.resized = undefined; bridge.destroy.mockClear();
+  bridge.data = null; bridge.fail = false; bridge.open = null; bridge.requests = []; bridge.saveArgs = null; bridge.maximized = false; bridge.resized = undefined; bridge.destroy.mockClear();
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.stubGlobal('Worker', class { onmessage = null; postMessage() {} terminate() {} });
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
@@ -251,6 +251,45 @@ describe('editor typography', () => {
   });
 });
 describe('session lifecycle', () => {
+  it('shows associated files of every format as saved until their content changes', async () => {
+    bridge.requests = ['txt', 'md', 'json', 'csv'].map((extension) => ({
+      path: `C:/sample.${extension}`, text: extension === 'csv' ? 'name,value\na,1' : 'content',
+      encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: 'revision',
+    }));
+    await mount();
+    for (const extension of ['txt', 'md', 'json', 'csv']) {
+      expect(root.querySelector(`[role="tab"][aria-label="sample.${extension}，已保存"]`)).not.toBeNull();
+    }
+    expect(root.querySelector('.csv-preview table')).not.toBeNull();
+    key('s'); await new Promise(resolve => setTimeout(resolve, 10));
+    expect(bridge.saveArgs).toMatchObject({ saveAs: true });
+    key('w'); await nextTick();
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
+    expect(root.querySelector('[role="tab"][aria-label="sample.csv，已保存"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[role="tab"][aria-label="sample.txt，已保存"]')!.click(); await nextTick();
+    editor().dispatch({ changes: { from: 0, insert: 'edited ' } }); await nextTick();
+    expect(root.querySelector('[role="tab"][aria-label="sample.txt，未保存"]')).not.toBeNull();
+  });
+  it('resizes CSV columns without changing save status and restores the widths', async () => {
+    await mount(); await openDoc('table.csv', 'name,value\na,1');
+    const handle = root.querySelector<HTMLElement>('.csv-preview th .csv-resize-handle')!;
+    handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await nextTick();
+    expect(root.querySelector('.csv-preview table')?.outerHTML).toContain('176px');
+    handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 100 }));
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 150 }));
+    window.dispatchEvent(new MouseEvent('pointerup'));
+    await nextTick();
+    expect(root.querySelector('.csv-preview table')?.outerHTML).toContain('226px');
+    expect(root.querySelector('[role="tab"][aria-label="table.csv，已保存"]')).not.toBeNull();
+    await close();
+    expect((bridge.data as { notes: { csvColumnWidths: number[] }[] }).notes[1].csvColumnWidths).toEqual([226, 160]);
+    (bridge.data as { notes: { csvOptions: { firstRowHeader: boolean } }[] }).notes[1].csvOptions.firstRowHeader = false;
+    unmount(); await mount();
+    expect(root.querySelector('.csv-preview col')?.getAttribute('style')).toContain('226px');
+    expect(root.querySelector('.csv-preview td .csv-resize-handle')).not.toBeNull();
+    expect(root.querySelector('[role="tab"][aria-label="table.csv，已保存"]')).not.toBeNull();
+  });
   it('starts with empty txt and restores temporary tabs with no exit prompt', async () => {
     await mount();
     expect(root.textContent).not.toContain('欢迎使用');

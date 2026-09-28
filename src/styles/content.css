@@ -161,6 +161,7 @@
 }
 .csv-preview th,
 .csv-preview td {
+  position: relative;
   min-width: 100px;
   max-width: 360px;
   padding: 8px 12px;
@@ -170,6 +171,29 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   vertical-align: top;
+}
+.csv-preview table.csv-resized {
+  table-layout: fixed;
+}
+.csv-preview table.csv-resized th,
+.csv-preview table.csv-resized td {
+  min-width: 0;
+  max-width: none;
+}
+.csv-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 2;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.csv-resize-handle:hover,
+.csv-resize-handle:focus-visible {
+  background: var(--border);
+  outline: none;
 }
 .csv-preview th {
   position: sticky;
