@@ -24,7 +24,7 @@
 | Ctrl+F | 查找与替换 |
 | Ctrl+Z / Ctrl+Y | 撤销 / 重做 |
 
-JSON 格式化使用格式菜单。编辑菜单的复制、剪切、粘贴和纯文本粘贴针对当前编辑器选区；查找与替换使用 CodeMirror 搜索面板。帮助菜单的检查更新查询 GitHub 最新发布版本，只报告结果，不自动下载安装。操作结果以短暂提示显示。浏览器开发预览只验证编辑界面，本地打开、保存与恢复需要桌面版。
+JSON 格式化使用格式菜单。编辑菜单的复制、剪切、粘贴和纯文本粘贴针对当前编辑器选区；“查找与替换”打开右上悬浮面板，拖动标题可临时移位，关闭后重新打开回到右上角。帮助菜单的检查更新查询 GitHub 最新发布版本，只报告结果，不自动下载安装。操作结果以短暂提示显示。浏览器开发预览只验证编辑界面，本地打开、保存与恢复需要桌面版。
 
 主题核心色参考 Typora 官方 [Newsprint](https://github.com/typora/typora-default-themes/blob/master/themes/newsprint.css) 与 [Night](https://github.com/typora/typora-default-themes/blob/master/themes/night.css) CSS：浅色使用 `#f3f2ee` 背景、`#1f0909` 正文；深色使用 `#363B40` 背景、`#2E3033` 侧栏、`#b8bfc6` 正文。其余控件颜色按 zNote 的结构和可读性适配。
 

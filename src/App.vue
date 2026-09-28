@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import 'katex/dist/katex.min.css';
-import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick, createVNode, render } from 'vue';
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -8,13 +8,13 @@ import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { languages } from '@codemirror/language-data';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
+import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { syntaxHighlighting, bracketMatching, HighlightStyle } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, ArrowUp, ArrowDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings, editableCodeFence } from './preview';
 import { canFormatCode } from './code-format';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
@@ -167,6 +167,7 @@ function stateFor(text: string, format: NoteFormat) {
     const note = active.value; if (!note) return; note.state = u.state;
     if (u.docChanged) { note.version++; note.dirty = true; touch(); clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshDerived, 280); scheduleRecovery(); }
     if (u.selectionSet || u.docChanged) { const p = u.state.selection.main.head; const line = u.state.doc.lineAt(p); position.value = `行 ${line.number}，列 ${p - line.from + 1}`; count.value = u.state.doc.length; highlightPreviewLine(); }
+    if (!searchPanelOpen(u.state)) resetSearchPanelPosition(u.view);
   })] });
 }
 function createNote(doc?: NativeDocument, name = '未命名.txt') {
@@ -272,7 +273,55 @@ function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   if (format === 'json' && note.state.doc.length && !/\.jsonc$/i.test(note.name)) formatJson();
 }
 function toggleMenu(value: typeof menu.value) { menu.value = menu.value === value ? null : value; }
-function searchPanel(replace = false) { menu.value = null; if (!view) return; if (isCsv.value && mode.value === 'live') changeMode('source'); openSearchPanel(view); void nextTick(() => { view?.requestMeasure(); (view?.dom.querySelector(replace ? '.cm-search input[name="replace"]' : '.cm-search input[name="search"]') as HTMLInputElement | null)?.focus(); }); }
+function resetSearchPanelPosition(editor: EditorView) {
+  const panels = editor.dom.querySelector<HTMLElement>('.cm-panels-top');
+  if (panels) { panels.classList.remove('znote-search-floating'); panels.style.left = ''; panels.style.top = ''; panels.style.right = ''; }
+}
+function decorateSearchPanel(editor: EditorView) {
+  const panel = editor.dom.querySelector<HTMLElement>('.cm-search');
+  const panels = panel?.parentElement;
+  if (!panel || !panels || panel.querySelector('.search-panel-header')) return;
+  panels.classList.add('znote-search-floating');
+  const item = (name: string) => panel.querySelector<HTMLElement>(`[name="${name}"]`)!;
+  const button = (name: string) => panel.querySelector<HTMLButtonElement>(`button[name="${name}"]`)!;
+  const icon = (button: HTMLElement, component: typeof ArrowUp, label: string) => {
+    button.textContent = '';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    render(createVNode(component, { size: 15, 'aria-hidden': true }), button);
+  };
+  const header = document.createElement('div'); header.className = 'search-panel-header'; header.title = '拖动查找与替换';
+  const title = document.createElement('strong'); title.textContent = '查找与替换'; header.append(title);
+  const close = item('close'); icon(close, X, '关闭查找与替换'); header.append(close);
+  const findRow = document.createElement('div'); findRow.className = 'search-panel-row';
+  const searchField = item('search'); findRow.append(searchField);
+  const previous = item('prev'); icon(previous, ArrowUp, '上一个'); findRow.append(previous);
+  const next = item('next'); icon(next, ArrowDown, '下一个'); findRow.append(next);
+  const replaceRow = document.createElement('div'); replaceRow.className = 'search-panel-row';
+  replaceRow.append(button('replace'), button('replaceAll'));
+  const replaceField = panel.querySelector<HTMLInputElement>('input[name="replace"]')!;
+  replaceRow.prepend(replaceField);
+  const options = document.createElement('div'); options.className = 'search-panel-options';
+  options.append(...panel.querySelectorAll('label'), item('select'));
+  panel.replaceChildren(header, findRow, replaceRow, options);
+
+  header.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    event.preventDefault();
+    const container = editor.dom.getBoundingClientRect();
+    const bounds = panels.getBoundingClientRect();
+    const offsetX = event.clientX - bounds.left; const offsetY = event.clientY - bounds.top;
+    header.setPointerCapture(event.pointerId);
+    const move = (moveEvent: PointerEvent) => {
+      panels.style.right = 'auto';
+      panels.style.left = `${Math.max(0, Math.min(container.width - bounds.width, moveEvent.clientX - container.left - offsetX))}px`;
+      panels.style.top = `${Math.max(0, Math.min(container.height - bounds.height, moveEvent.clientY - container.top - offsetY))}px`;
+    };
+    const stop = () => { header.removeEventListener('pointermove', move); header.removeEventListener('pointerup', stop); header.removeEventListener('pointercancel', stop); };
+    header.addEventListener('pointermove', move); header.addEventListener('pointerup', stop); header.addEventListener('pointercancel', stop);
+  });
+}
+function searchPanel(replace = false) { menu.value = null; if (!view) return; if (isCsv.value && mode.value === 'live') changeMode('source'); openSearchPanel(view); decorateSearchPanel(view); void nextTick(() => { view?.requestMeasure(); (view?.dom.querySelector(replace ? '.cm-search input[name="replace"]' : '.cm-search input[name="search"]') as HTMLInputElement | null)?.focus(); }); }
 async function clipboardAction(action: 'copy' | 'cut' | 'paste') {
   menu.value = null; if (!view || busy.value) return;
   const current = view; const selection = current.state.selection.main; const note = active.value; const version = note?.version;
@@ -311,7 +360,7 @@ async function persistRecovery(excludeId?: number): Promise<boolean> {
 }
 function scheduleRecovery() { if (!native) return; clearTimeout(recoveryTimer); recoveryTimer = setTimeout(() => { void persistRecovery(); }, 1500); }
 
-function shortcuts(e: KeyboardEvent) { if (e.key === 'Escape') { menu.value = null; if (settingsOpen.value) settingsOpen.value = false; } if (closePrompt.value) { if (e.key === 'Escape') { e.preventDefault(); void resolveClose('cancel'); } if (e.key === 'Tab') { const buttons = [...(modalElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]; const first = buttons[0]; const last = buttons[buttons.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } if (e.ctrlKey || e.metaKey) e.preventDefault(); return; } if (!(e.ctrlKey || e.metaKey)) return; const k = e.key.toLowerCase(); if (isCsv.value && mode.value === 'live' && (k === 'f' || k === 'h')) { e.preventDefault(); searchPanel(k === 'h'); return; } if (['n', 'o', 's', 'w'].includes(k)) { e.preventDefault(); if (busy.value) return; if (k === 'n') newNote(); if (k === 'o') void openFile(); if (k === 's') void saveNote(active.value, e.shiftKey); if (k === 'w' && active.value) requestClose(active.value); } }
+function shortcuts(e: KeyboardEvent) { if (e.key === 'Escape') { menu.value = null; if (settingsOpen.value) settingsOpen.value = false; } if (closePrompt.value) { if (e.key === 'Escape') { e.preventDefault(); void resolveClose('cancel'); } if (e.key === 'Tab') { const buttons = [...(modalElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]; const first = buttons[0]; const last = buttons[buttons.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } if (e.ctrlKey || e.metaKey) e.preventDefault(); return; } if (settingsOpen.value || !(e.ctrlKey || e.metaKey)) return; const k = e.key.toLowerCase(); if (k === 'f' || k === 'h') { e.preventDefault(); searchPanel(k === 'h'); return; } if (['n', 'o', 's', 'w'].includes(k)) { e.preventDefault(); if (busy.value) return; if (k === 'n') newNote(); if (k === 'o') void openFile(); if (k === 's') void saveNote(active.value, e.shiftKey); if (k === 'w' && active.value) requestClose(active.value); } }
 function setEncoding(value: string) { if (active.value) { active.value.encoding = value; active.value.bom = value.startsWith('UTF-16'); active.value.dirty = true; active.value.metaDirty = true; active.value.version++; touch(); scheduleRecovery(); status.value = `保存时使用 ${value}`; } }
 function setLineEnding(value: string) { if (active.value) { active.value.lineEnding = value; active.value.dirty = true; active.value.metaDirty = true; active.value.version++; touch(); scheduleRecovery(); status.value = `保存时统一换行为 ${value}`; } }
 function beforeUnload(e: BeforeUnloadEvent) { if (notes.value.some(n => n.dirty)) { e.preventDefault(); e.returnValue = ''; } }
@@ -340,7 +389,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
           <button @click="menu = null; newNote()"><FilePlus2 :size="15" />新建 <kbd>Ctrl+N</kbd></button><button :disabled="busy" @click="menu = null; openFile()"><FolderOpen :size="15" />打开 <kbd>Ctrl+O</kbd></button><button :disabled="busy" @click="menu = null; saveNote()"><Save :size="15" />保存 <kbd>Ctrl+S</kbd></button><button :disabled="busy" @click="menu = null; saveNote(active, true)"><Save :size="15" />另存为 <kbd>Ctrl+Shift+S</kbd></button><hr /><details class="export-submenu"><summary><Download :size="15" />导出 <ChevronRight :size="14" class="export-chevron" /></summary><button :disabled="!canExport" class="menu-subitem" @click="exportFormat('docx')">Word (.docx)</button><button :disabled="!canExport" class="menu-subitem" @click="exportFormat('pdf')">PDF (.pdf)</button></details>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'edit'" @click="toggleMenu('edit')">编辑</button><div v-if="menu === 'edit'" class="menu-popup">
-          <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button><hr /><button @click="searchPanel()"><Search :size="15" />查找 <kbd>Ctrl+F</kbd></button><button @click="searchPanel(true)"><Search :size="15" />替换</button>
+          <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button><hr /><button @click="searchPanel()"><Search :size="15" />查找与替换 <kbd>Ctrl+F</kbd></button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button><div v-if="menu === 'format'" class="menu-popup">
           <button :class="{ checked: active?.format === 'markdown' }" @click="changeFormat('markdown')">Markdown</button><button :class="{ checked: active?.format === 'json' }" @click="changeFormat('json')">JSON</button><button :class="{ checked: active?.format === 'csv' }" @click="changeFormat('csv')">CSV</button><hr /><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button><button :disabled="active?.format !== 'markdown' || busy || large" @click="formatCodeFence()"><Code2 :size="15" />格式化代码块</button>
