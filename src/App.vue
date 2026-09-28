@@ -22,7 +22,7 @@ import { parseCsv } from './csv';
 import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
 import { liveMarkdownBlocks } from './live-markdown';
 import { hydrateDiagrams } from './diagram';
-import { conversionMenuState, needsSave } from './note-file';
+import { conversionMenuState, displayMenuState, needsSave } from './note-file';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
@@ -33,6 +33,7 @@ interface Note extends NativeDocument { id: number; name: string; format: NoteFo
 const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式排版未编辑的 Markdown 块，点击后直接修改源码。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
+const displayMenu = computed(() => displayMenuState(active.value?.path ?? null));
 const conversionMenu = computed(() => conversionMenuState(active.value?.path ?? null));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
 const mode = ref<DisplayMode>('live'); const dark = ref(false);
@@ -267,10 +268,17 @@ function formatCodeFence() {
   status.value = '正在格式化代码…';
   worker.postMessage({ id, kind: 'code', language: fence.language, text: doc.sliceString(from, to) });
 }
+function displayAs(format: Exclude<NoteFormat, 'txt'>) {
+  const note = active.value; menu.value = null; if (!note || displayMenuState(note.path) !== 'enabled') return;
+  note.format = format;
+  note.version++;
+  changeMode(defaultMode(format));
+  touch(); reconfigure(); refreshDerived(); status.value = `显示为 ${format === 'markdown' ? 'Markdown' : format.toUpperCase()}`;
+}
 function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   const note = active.value; menu.value = null; if (!note) return;
   if (conversionMenuState(note.path) !== 'enabled') return;
-  if (note.format === format && note.path === null) return;
+  if (formatForName(note.name) === format && note.path === null) return;
   const wasLocalTxt = note.path !== null;
   note.format = format;
   note.name = note.name.replace(/\.[^.]+$/, '') + ({ markdown: '.md', json: '.json', csv: '.csv' }[format]);
@@ -400,7 +408,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
           <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button><hr /><button @click="searchPanel()"><Search :size="15" />查找与替换 <kbd>Ctrl+F</kbd></button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button><div v-if="menu === 'format'" class="menu-popup">
-          <template v-if="conversionMenu !== 'hidden'"><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('markdown')">转为 Markdown</button><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('csv')">转为 CSV</button><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('json')">转为 JSON</button><hr /></template><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button><button :disabled="active?.format !== 'markdown' || busy || large" @click="formatCodeFence()"><Code2 :size="15" />格式化代码块</button>
+          <button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('markdown')">显示为 Markdown</button><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('csv')">显示为 CSV</button><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('json')">显示为 JSON</button><hr /><template v-if="conversionMenu !== 'hidden'"><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('markdown')">转为 Markdown</button><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('csv')">转为 CSV</button><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('json')">转为 JSON</button><hr /></template><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button><button :disabled="active?.format !== 'markdown' || busy || large" @click="formatCodeFence()"><Code2 :size="15" />格式化代码块</button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'help'" @click="toggleMenu('help')">帮助</button><div v-if="menu === 'help'" class="menu-popup">
           <button @click="menu = null; settingsOpen = true"><Settings :size="15" />设置</button><button @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
