@@ -1,5 +1,10 @@
 export type ConversionMenuState = 'enabled' | 'disabled' | 'hidden';
 
+export function nextUntitledName(names: string[]): string {
+  const highest = names.reduce((max, name) => Math.max(max, Number(/^未命名(\d+)\./.exec(name)?.[1] ?? 0)), 0);
+  return `未命名${highest + 1}.txt`;
+}
+
 export function displayMenuState(path: string | null): 'enabled' | 'disabled' {
   return path !== null && /\.(md|markdown|json|jsonc|geojson|csv)$/i.test(path) ? 'disabled' : 'enabled';
 }

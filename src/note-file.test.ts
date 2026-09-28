@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { conversionMenuState, displayMenuState, needsSave } from './note-file';
+import { conversionMenuState, displayMenuState, needsSave, nextUntitledName } from './note-file';
 
 describe('file presentation rules', () => {
+  it('numbers temporary names across formats and restored tabs', () => {
+    expect(nextUntitledName([])).toBe('未命名1.txt');
+    expect(nextUntitledName(['未命名1.txt', '未命名3.md', '未命名.txt'])).toBe('未命名4.txt');
+  });
   it('allows conversion only for new notes and local txt files', () => {
     expect(conversionMenuState(null)).toBe('enabled');
     expect(conversionMenuState('C:\\notes\\draft.TXT')).toBe('enabled');
