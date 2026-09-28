@@ -6,7 +6,7 @@ import { parseSession, serializeEditor, restoreEditor, type SessionNote } from '
 
 function note(state: EditorState, path: string | null = null): SessionNote {
   return { path, name: path ?? '未命名.txt', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: path ? 'revision' : null,
-    format: 'txt', mode: 'source', saved: '', dirty: true, metaDirty: false, requiresSaveAs: false,
+    format: 'txt', mode: 'source', markdownWidth: 'full', saved: '', dirty: true, metaDirty: false, requiresSaveAs: false,
     editor: serializeEditor(state), csvOptions: defaultCsvOptions(), scrollTop: 120, scrollLeft: 0, previewScrollTop: 42, collapsedHeadings: ['heading'] };
 }
 describe('persistent session', () => {
@@ -37,6 +37,12 @@ describe('persistent session', () => {
     expect(session.notes[0].dirty).toBe(true);
     const state = restoreEditor(session.notes[0].editor, { extensions: [history()] });
     expect(state.doc.toString()).toBe('# draft');
+  });
+  it('uses full width for sessions saved before Markdown width settings', () => {
+    const oldNote = note(EditorState.create({ doc: '# note' }), 'C:/note.md');
+    delete (oldNote as Partial<SessionNote>).markdownWidth;
+    const session = parseSession({ version: 1, activeIndex: 0, outlineCollapsed: false, notes: [oldNote] });
+    expect(session?.notes[0].markdownWidth).toBe('full');
   });
   it('rejects corrupt session instead of silently dropping a tab', () => {
     expect(() => parseSession({ version: 1, activeIndex: 0, outlineCollapsed: false, notes: [{}] })).toThrow();

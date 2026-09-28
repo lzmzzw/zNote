@@ -51,7 +51,9 @@ footer .outline-toggle:hover{color:var(--accent)}
 .live-code-close{border-bottom:1px solid var(--border);border-radius:0 0 3px 3px}
 .live-code-hidden{height:8px;min-height:8px;line-height:8px!important;overflow:hidden}
 .live-rule{display:block;width:100%;border-top:1px solid var(--border);height:1px;margin:13px 0}
-.live .cm-content{max-width:900px}
+.writing-area.live .cm-content{max-width:none}
+.writing-area.live.markdown-width-standard .cm-content{max-width:960px;margin-inline:auto}
+.writing-area.live.markdown-width-compact .cm-content{max-width:720px;margin-inline:auto}
 .live-rendered.preview{display:flow-root;flex:none;min-width:0;width:100%;max-width:100%;padding:0 4px;border:0;overflow:visible;cursor:text;line-height:1.7;white-space:normal}
 .live-rendered:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .live-rendered :first-child{margin-top:0}
