@@ -44,6 +44,39 @@ describe('window controls', () => {
   });
 });
 describe('Markdown width settings', () => {
+  it('keeps the outline toggle usable after switching tabs and rebinds gutter measurements', async () => {
+    const observers: { callback: () => void; target?: Element; disconnect: ReturnType<typeof vi.fn> }[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      entry = { callback: () => {}, target: undefined as Element | undefined, disconnect: vi.fn() };
+      constructor(callback: () => void) { this.entry.callback = callback; observers.push(this.entry); }
+      observe(target: Element) { this.entry.target = target; }
+      disconnect() { this.entry.disconnect(); }
+    });
+    await mount(); await openDoc('note.md', '# heading');
+    const first = observers.at(-1)!;
+    expect(first.target).toBe(root.querySelector('.cm-gutters'));
+    root.querySelector<HTMLButtonElement>('.outline-toggle')!.click(); await nextTick();
+    expect(root.querySelector('.sidebar')).toBeNull();
+    await openDoc('other.txt', 'text');
+    expect(first.disconnect).toHaveBeenCalled();
+    expect(first.target?.isConnected).toBe(false);
+    expect(root.querySelector('.outline-toggle')).toBeNull();
+    root.querySelectorAll<HTMLButtonElement>('.tab [role="tab"]')[1].click(); await nextTick();
+    const current = observers.at(-1)!;
+    expect(current.target).toBe(root.querySelector('.cm-gutters'));
+    expect(current.target?.isConnected).toBe(true);
+    const toggle = root.querySelector<HTMLButtonElement>('.outline-toggle')!;
+    current.callback(); await nextTick();
+    expect(toggle.style.width).toBe('37px');
+    expect(toggle.getAttribute('aria-label')).toBe('展开文档大纲');
+    toggle.click(); await nextTick();
+    expect(root.querySelector('.sidebar')).not.toBeNull();
+    expect(toggle.getAttribute('aria-label')).toBe('收起文档大纲');
+    vi.spyOn(current.target!, 'getBoundingClientRect').mockReturnValue({ width: 64 } as DOMRect);
+    current.callback(); await nextTick();
+    expect(toggle.style.width).toBe('64px');
+  });
+
   it('defaults to standard width and restores a per-tab width choice', async () => {
     await mount(); await openDoc('note.md', '# heading');
     expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-standard')).toBe(true);

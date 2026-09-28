@@ -57,6 +57,14 @@ watch(status, value => { if (value === '准备就绪') return; toast.value = val
 const preview = ref(''); const headings = ref<OutlineNode[]>([]);
 const outlineCollapsed = ref(false);
 const gutterWidth = ref(37); let gutterObserver: ResizeObserver | undefined;
+function observeGutter() {
+  gutterObserver?.disconnect();
+  const gutters = view?.dom.querySelector<HTMLElement>('.cm-gutters');
+  if (!gutters) return;
+  const measure = () => { gutterWidth.value = Math.max(37, gutters.getBoundingClientRect().width); };
+  gutterObserver = new ResizeObserver(measure);
+  gutterObserver.observe(gutters); measure();
+}
 const collapsedHeadings = ref<Record<number, string[]>>({});
 const shownHeadings = computed(() => visibleOutline(headings.value, new Set(collapsedHeadings.value[activeId.value] ?? [])));
 function toggleHeading(key: string) {
@@ -376,6 +384,7 @@ function selectNote(note: Note) {
   const { scrollTop, scrollLeft, previewScrollTop } = note;
   view?.setState(note.state); cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null;
   reconfigure(); refreshDerived();
+  observeGutter();
   const head = note.state.selection.main.head; const line = note.state.doc.lineAt(head); position.value = `行 ${line.number}，列 ${head - line.from + 1}`;
   void nextTick(() => {
     if (active.value !== note || !view) return;
@@ -652,8 +661,6 @@ onMounted(async () => {
   view = new EditorView({ state: active.value!.state, parent: host.value }); view.scrollDOM.addEventListener('scroll', onSourceScroll); refreshDerived();
   if (document.fonts?.load) void Promise.allSettled([document.fonts.load('16px "zNote Sans SC"'), document.fonts.load('14px "zNote Mono SC"')]).then(() => view?.requestMeasure());
   selectNote(active.value!);
-  const gutters = view.dom.querySelector<HTMLElement>('.cm-gutters');
-  if (gutters) { gutterObserver = new ResizeObserver(() => { gutterWidth.value = gutters.getBoundingClientRect().width; }); gutterObserver.observe(gutters); gutterWidth.value = gutters.getBoundingClientRect().width; }
   worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' }); worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => { const pending = pendingFormat; if (closingWindow || !pending || data.id !== pending.id) return; pendingFormat = undefined; if (pending.note.version !== pending.version || pending.note.format !== pending.format || !notes.value.includes(pending.note)) { status.value = '内容已变化，已忽略过期格式化结果'; return; } if (data.error) { status.value = data.error; return; } const changes = { from: pending.from, to: pending.to, insert: data.text! }; if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' }); else { pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state; pending.note.version++; pending.note.dirty = true; touch(); scheduleRecovery(); } status.value = '已格式化 · Ctrl + Z 可撤销'; };
   window.addEventListener('keydown', shortcuts);
   sessionReady = true;
