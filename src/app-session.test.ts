@@ -122,7 +122,7 @@ describe('regional context menus', () => {
     expect(labels()).toEqual(['保存', '另存为', '复制文件名', '复制完整路径', '关闭', '关闭左侧标签', '关闭右侧标签', '关闭其他标签', '关闭全部标签']);
     await choose('复制文件名'); expect(writeText).toHaveBeenLastCalledWith('未命名1.txt');
     expect(root.querySelector('.tab.active')?.textContent).toContain('未命名2.txt');
-    await rightClick(root.querySelector('.tab-list')!); expect(labels()).toEqual(['新建', '打开文件']);
+    await rightClick(root.querySelector('.tab-list')!); expect(labels()).toEqual(['打开文件']);
   });
   it('preserves source selection and only offers approved editing commands', async () => {
     await mount(); editor().dispatch({ changes: { from: 0, insert: 'selected text' }, selection: { anchor: 0, head: 8 } });

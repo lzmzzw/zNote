@@ -88,7 +88,7 @@ const menu = ref<'file' | 'edit' | 'format' | 'help' | null>(null);
 const settingsOpen = ref(false);
 const markdownSettingsOpen = ref(false);
 const csvSettingsOpen = ref(false);
-const encodingOptions = ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].map(value => ({ value, label: value }));
+const encodingOptions = ['UTF-8', 'GBK'].map(value => ({ value, label: value }));
 const lineEndingOptions = computed(() => [
   ...(active.value?.lineEnding === 'Mixed' ? [{ value: 'Mixed', label: 'Mixed', disabled: true }] : []),
   ...['LF', 'CRLF', 'CR'].map(value => ({ value, label: value })),
@@ -220,7 +220,7 @@ function onContextMenu(event: MouseEvent) {
       ...closeItems.map((item, index) => ({ ...item, separator: index === 0 })),
     ]); return;
   }
-  if (target.closest('.tabs')) { showContext(event, [{ label: '新建', action: newNote }, { label: '打开文件', action: openFile }]); return; }
+  if (target.closest('.tabs')) { showContext(event, [{ label: '打开文件', action: openFile }]); return; }
   const outlineRow = target.closest('.outline-row');
   if (outlineRow) { const title = outlineRow.querySelector('.outline-link')?.textContent ?? ''; showContext(event, [{ label: '复制标题', action: () => copyText(title) }]); return; }
   if (target.closest('.sidebar')) {
@@ -742,7 +742,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
     <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false">
       <section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapDialog($event, settingsElement)">
         <header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header>
-        <div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Newsprint</button><button :aria-pressed="dark" @click="setTheme(true)">Night</button></div></div>
+        <div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Light</button><button :aria-pressed="dark" @click="setTheme(true)">Dark</button></div></div>
         <div class="setting-row"><span>保存编码</span><OptionSelect label="保存编码" :model-value="active?.encoding" :options="encodingOptions" @update:model-value="setEncoding" /></div>
         <div class="setting-row"><span>换行格式</span><OptionSelect label="换行格式" :model-value="active?.lineEnding" :options="lineEndingOptions" @update:model-value="setLineEnding" /></div>
       </section>
