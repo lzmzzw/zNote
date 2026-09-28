@@ -23,6 +23,8 @@ import { liveMarkdownBlocks } from './live-markdown';
 import { hydrateDiagrams } from './diagram';
 import { conversionMenuState, displayMenuState, needsSave, nextUntitledName } from './note-file';
 import { parseSession, serializeEditor, restoreEditor, type Session, type SessionNote } from './session';
+import ContextMenu from './components/ContextMenu.vue';
+import { tabCloseTargets, spreadsheetText, type ContextMenuItem } from './context-menu';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
@@ -87,6 +89,174 @@ let unlistenAssociated: (() => void) | undefined;
 let openingAssociated = false;
 let pendingAssociated = false;
 const closePrompt = shallowRef<{ note: Note } | null>(null);
+let closeQueue: number[] = [];
+const context = shallowRef<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+let contextFocus: HTMLElement | null = null;
+function dismissContext() {
+  context.value = null;
+  if (contextFocus?.isConnected) contextFocus.focus({ preventScroll: true });
+}
+function showContext(event: MouseEvent, items: ContextMenuItem[]) {
+  contextFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const target = event.target instanceof Element ? event.target : null;
+  const rect = target?.getBoundingClientRect();
+  context.value = { x: event.clientX || rect?.left || 0, y: event.clientY || rect?.bottom || 0, items };
+}
+async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); status.value = '已复制'; }
+  catch (error) { status.value = `复制失败：${error}`; }
+}
+function selectedText(container: Element) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !container.contains(selection.anchorNode) || !container.contains(selection.focusNode)) return '';
+  return selection.toString();
+}
+function locateSource(note: Note, from: number) {
+  if (!notes.value.includes(note)) return;
+  if (active.value !== note) selectNote(note);
+  if (note.format === 'csv' && mode.value === 'live') changeMode('source');
+  view?.dispatch({ selection: { anchor: Math.min(from, note.state.doc.length) }, scrollIntoView: true });
+  view?.focus();
+}
+function lineRange(note: Note, start: number, end: number) {
+  const doc = note.state.doc;
+  const from = doc.line(Math.max(1, Math.min(start, doc.lines))).from;
+  const to = doc.line(Math.max(1, Math.min(end, doc.lines))).to;
+  return { from, text: doc.sliceString(from, to) };
+}
+function onContextPointer(event: MouseEvent) {
+  if (event.button === 2) event.preventDefault();
+}
+async function editorClipboard(action: 'copy' | 'cut' | 'paste', note: Note, selection = note.state.selection.main) {
+  const version = note.version;
+  const valid = () => active.value === note && notes.value.includes(note) && note.version === version && !busy.value && !closingWindow;
+  try {
+    if (action === 'paste') {
+      const text = await navigator.clipboard.readText();
+      if (!valid()) return;
+      view?.dispatch({ changes: { from: selection.from, to: selection.to, insert: text }, selection: { anchor: selection.from + text.length }, userEvent: 'input.paste' });
+    } else {
+      if (selection.empty) return;
+      await navigator.clipboard.writeText(note.state.doc.sliceString(selection.from, selection.to));
+      if (action === 'cut' && valid()) view?.dispatch({ changes: { from: selection.from, to: selection.to }, selection: { anchor: selection.from }, userEvent: 'delete.cut' });
+    }
+    if (valid() || active.value === note) view?.focus();
+  } catch (error) { status.value = `剪贴板操作失败：${error}`; }
+}
+function inputContext(input: HTMLInputElement | HTMLTextAreaElement): ContextMenuItem[] {
+  const start = input.selectionStart ?? 0; const end = input.selectionEnd ?? start; const original = input.value;
+  const editable = !input.disabled && !input.readOnly;
+  const run = async (action: 'undo' | 'cut' | 'copy' | 'paste' | 'all') => {
+    if (!input.isConnected || input.value !== original) return;
+    try {
+      if (action === 'copy' || action === 'cut') await navigator.clipboard.writeText(original.slice(start, end));
+      const pasted = action === 'paste' ? await navigator.clipboard.readText() : '';
+      if (!input.isConnected || input.value !== original) return;
+      input.focus(); input.setSelectionRange(start, end);
+      if (action === 'all') input.select();
+      else if (action === 'undo') document.execCommand('undo');
+      else if (action === 'paste' || action === 'cut') {
+        const inserted = action === 'paste' ? pasted : '';
+        if (!document.execCommand?.('insertText', false, inserted)) {
+          input.setRangeText(inserted, start, end, 'end'); input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    } catch (error) { status.value = `输入框操作失败：${error}`; }
+  };
+  return [
+    { label: '撤销', disabled: !editable, action: () => run('undo') },
+    { label: '剪切', disabled: !editable || start === end, action: () => run('cut') },
+    { label: '复制', disabled: start === end, action: () => run('copy') },
+    { label: '粘贴', disabled: !editable, action: () => run('paste') },
+    { label: '全选', disabled: !original.length, action: () => run('all') },
+  ];
+}
+function onContextMenu(event: MouseEvent) {
+  event.preventDefault(); event.stopPropagation(); context.value = null; menu.value = null;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || target.closest('.context-menu') || closingWindow || busy.value) return;
+  const scrollable = target.closest<HTMLElement>('.cm-scroller, .tab-list, .csv-table-wrap, .preview, .outline, .diagram-preview, pre, table, .katex-display');
+  if (scrollable === target && (event.clientX || event.clientY)) {
+    const bounds = scrollable.getBoundingClientRect();
+    if (scrollable.scrollHeight > scrollable.clientHeight && event.clientX >= bounds.left + scrollable.clientLeft + scrollable.clientWidth ||
+      scrollable.scrollWidth > scrollable.clientWidth && event.clientY >= bounds.top + scrollable.clientTop + scrollable.clientHeight) return;
+  }
+  const input = target.closest<HTMLInputElement | HTMLTextAreaElement>('input:not([type=checkbox]):not([type=radio]), textarea');
+  if (input && input.selectionStart !== null) { showContext(event, inputContext(input)); return; }
+  if (target.closest('.titlebar, .mode-switch, footer, .cm-gutters, .cm-search, .modal-backdrop, button.close-tab, button.add-tab')) return;
+  const tab = target.closest<HTMLElement>('.tab');
+  if (tab) {
+    const index = [...tab.parentElement!.querySelectorAll('.tab')].indexOf(tab);
+    const note = notes.value[index]; if (!note) return;
+    const closeItems = ([['关闭', 'current'], ['关闭左侧标签', 'left'], ['关闭右侧标签', 'right'], ['关闭其他标签', 'others'], ['关闭全部标签', 'all']] as const).map(([label, scope]) => {
+      const ids = tabCloseTargets(notes.value.map(n => n.id), note.id, scope);
+      return { label, disabled: !ids.length, action: () => startCloseQueue(ids) };
+    });
+    const name = note.name; const path = note.path;
+    showContext(event, [
+      { label: '保存', action: async () => { await saveNote(note); } }, { label: '另存为', action: async () => { await saveNote(note, true); } },
+      { label: '复制文件名', separator: true, action: () => copyText(name) },
+      { label: '复制完整路径', disabled: !path, action: () => copyText(path ?? '') },
+      ...closeItems.map((item, index) => ({ ...item, separator: index === 0 })),
+    ]); return;
+  }
+  if (target.closest('.tabs')) { showContext(event, [{ label: '新建', action: newNote }, { label: '打开文件', action: openFile }]); return; }
+  const outlineRow = target.closest('.outline-row');
+  if (outlineRow) { const title = outlineRow.querySelector('.outline-link')?.textContent ?? ''; showContext(event, [{ label: '复制标题', action: () => copyText(title) }]); return; }
+  if (target.closest('.sidebar')) {
+    const note = active.value; if (!note) return;
+    const all = visibleOutline(headings.value, new Set()).filter(heading => heading.children.length).map(heading => heading.key);
+    const set = (keys: string[]) => { collapsedHeadings.value = { ...collapsedHeadings.value, [note.id]: keys }; scheduleRecovery(); };
+    showContext(event, [{ label: '全部展开', disabled: !all.length, action: () => set([]) }, { label: '全部折叠', disabled: !all.length, action: () => set(all) }]); return;
+  }
+  const note = active.value; if (!note) return;
+  const liveBlock = target.closest<HTMLElement>('.live-rendered');
+  if (liveBlock) {
+    const block = lineRange(note, Number(liveBlock.dataset.blockStart), Number(liveBlock.dataset.blockEnd));
+    const plain = (liveBlock.innerText ?? liveBlock.textContent ?? '').replace(/\n+$/, '');
+    showContext(event, [{ label: '编辑块', action: () => locateSource(note, block.from) }, { label: '复制块原文', action: () => copyText(block.text) }, { label: '复制块纯文本', action: () => copyText(plain) }]); return;
+  }
+  const csv = target.closest('.csv-preview');
+  if (csv) {
+    const cell = target.closest<HTMLTableCellElement>('td, th');
+    if (!cell) { showContext(event, [{ label: 'CSV 设置', action: () => { csvSettingsOpen.value = true; } }]); return; }
+    const rowIndex = [...csv.querySelectorAll('tr')].indexOf(cell.parentElement as HTMLTableRowElement);
+    const column = cell.cellIndex; const rows = csvRows.value.map(row => [...row]);
+    const source = lineRange(note, csvRowLines.value[rowIndex].start, csvRowLines.value[rowIndex].end);
+    showContext(event, [{ label: '复制单元格', action: () => copyText(rows[rowIndex]?.[column] ?? '') }, { label: '复制整行', action: () => copyText(spreadsheetText([rows[rowIndex]])) }, { label: '复制整列', action: () => copyText(spreadsheetText(rows.map(row => [row[column] ?? '']))) }, { label: '定位到源码', action: () => locateSource(note, source.from) }]); return;
+  }
+  const jsonPreview = target.closest('.json-preview');
+  if (jsonPreview) {
+    const rowElement = target.closest<HTMLElement>('.json-preview-row');
+    const row = rowElement ? jsonRows.value[[...jsonPreview.querySelectorAll('.json-preview-row')].indexOf(rowElement)] : undefined;
+    const selected = selectedText(jsonPreview); const text = note.state.doc.toString();
+    showContext(event, [
+      { label: '复制选中文字', disabled: !selected, action: () => copyText(selected) },
+      { label: '复制属性名', disabled: row?.propertyName === undefined, action: () => copyText(row?.propertyName ?? '') },
+      { label: '复制值', disabled: row?.valueFrom === undefined, action: () => copyText(text.slice(row!.valueFrom, row!.valueTo)) },
+      { label: '复制节点原文', disabled: !row, action: () => copyText(text.slice(row!.nodeFrom ?? row!.from, row!.nodeTo ?? row!.to)) },
+      { label: '定位到源码', disabled: !row, action: () => locateSource(note, row!.from) },
+    ]); return;
+  }
+  const markdownPreview = target.closest<HTMLElement>('article.preview');
+  if (markdownPreview) {
+    const mapped = target.closest<HTMLElement>('[data-source-start]');
+    const block = mapped ? lineRange(note, Number(mapped.dataset.sourceStart), Number(mapped.dataset.sourceEnd ?? mapped.dataset.sourceStart)) : undefined;
+    const selected = selectedText(markdownPreview);
+    showContext(event, [{ label: '复制选中文字', disabled: !selected, action: () => copyText(selected) }, { label: '复制所在块原文', disabled: !block, action: () => copyText(block!.text) }, { label: '定位到源码', disabled: !block, action: () => locateSource(note, block!.from) }]); return;
+  }
+  if (target.closest('.cm-content, .cm-line, .cm-scroller, .editor-host')) {
+    if (event.clientX || event.clientY) {
+      const pos = view?.posAtCoords({ x: event.clientX, y: event.clientY });
+      const selection = note.state.selection.main;
+      if (pos != null && (selection.empty || pos < selection.from || pos > selection.to)) view?.dispatch({ selection: { anchor: pos } });
+    }
+    const selection = note.state.selection.main;
+    const version = note.version;
+    const clipboard = (action: 'copy' | 'cut' | 'paste') => { if (active.value === note && note.version === version) return editorClipboard(action, note, selection); };
+    showContext(event, [{ label: '剪切', disabled: selection.empty, action: () => clipboard('cut') }, { label: '复制', disabled: selection.empty, action: () => clipboard('copy') }, { label: '粘贴', action: () => clipboard('paste') }, { label: '纯文本粘贴', action: () => clipboard('paste') }, { label: '查找与替换', separator: true, action: () => { if (active.value === note) searchPanel(); } }]);
+  }
+}
 const native = isTauri();
 const modalElement = ref<HTMLElement>(); let previousFocus: HTMLElement | null = null;
 const settingsElement = ref<HTMLElement>(); let settingsPreviousFocus: HTMLElement | null = null;
@@ -276,15 +446,25 @@ async function exportFormat(format: 'docx' | 'pdf') {
   } catch (error) { status.value = `导出失败：${error}`; }
   finally { busy.value = false; }
 }
-function requestClose(note: Note) { if (busy.value || closingWindow) return; if (needsSave(note.path, note.dirty, note.requiresSaveAs)) closePrompt.value = { note }; else removeNote(note); }
+function startCloseQueue(ids: number[]) { closeQueue = [...ids]; advanceCloseQueue(); }
+function advanceCloseQueue() {
+  while (closeQueue.length) {
+    const id = closeQueue.shift();
+    const note = notes.value.find(n => n.id === id); if (!note) continue;
+    if (needsSave(note.path, note.dirty, note.requiresSaveAs)) { closePrompt.value = { note }; return; }
+    removeNote(note);
+  }
+}
+function requestClose(note: Note) { if (busy.value || closingWindow || closePrompt.value) return; startCloseQueue([note.id]); }
 function onTabAuxClick(event: MouseEvent, note: Note) { if (event.button === 1) { event.preventDefault(); requestClose(note); } }
 function removeNote(note: Note) { notes.value = notes.value.filter(n => n.id !== note.id); const { [note.id]: _removed, ...remaining } = collapsedHeadings.value; collapsedHeadings.value = remaining; if (!notes.value.length) createNote(); else if (activeId.value === note.id) selectNote(notes.value[0]); scheduleRecovery(); }
 async function resolveClose(action: 'save' | 'discard' | 'cancel') {
-  const prompt = closePrompt.value; if (!prompt || busy.value) return; if (action === 'cancel') { closePrompt.value = null; return; }
+  const prompt = closePrompt.value; if (!prompt || busy.value) return; if (action === 'cancel') { closeQueue = []; closePrompt.value = null; return; }
   if (action === 'save' && !(await saveNote(prompt.note))) return;
   if (action === 'discard' && native) { busy.value = true; const persisted = await persistRecovery(prompt.note.id); busy.value = false; if (!persisted) return; }
   closePrompt.value = null;
   removeNote(prompt.note);
+  advanceCloseQueue();
 }
 function formatJson() { const note = active.value; if (!note || busy.value || note.format !== 'json') return; if (note.state.doc.length > 1_000_000) { status.value = '大文件模式下暂不格式化'; return; } const id = ++formatId; pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length }; status.value = '正在格式化…'; worker.postMessage({ id, kind: 'json', text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) }); }
 function updateCsvOptions(changes: Partial<CsvOptions>) {
@@ -470,7 +650,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
 </script>
 
 <template>
-  <div class="app" :class="{ dark }" :inert="closingWindow" @pointerdown="menu && !($event.target as HTMLElement).closest('.app-menu') && (menu = null)">
+  <div class="app" :class="{ dark }" :inert="closingWindow" @contextmenu.capture="onContextMenu" @mousedown.capture="onContextPointer" @pointerdown="menu && !($event.target as HTMLElement).closest('.app-menu') && (menu = null)">
     <div class="titlebar" data-tauri-drag-region>
       <img class="titlebar-icon" src="/znote.svg" alt="" width="20" height="20" data-tauri-drag-region />
       <nav class="app-menu" aria-label="主菜单">
@@ -507,12 +687,12 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
         <div class="tab-list" role="tablist"><div v-for="note in notes" :key="note.id" class="tab" :class="{ active: note.id === activeId }" @mousedown.middle.prevent @auxclick="onTabAuxClick($event, note)"><button role="tab" :aria-selected="note.id === activeId" :aria-label="`${note.name}，${needsSave(note.path, note.dirty, note.requiresSaveAs) ? '未保存' : '已保存'}`" :title="note.name" @click="selectNote(note)"><FileCode2 v-if="note.format === 'markdown'" class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><FileJson2 v-else-if="note.format === 'json'" class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><FileSpreadsheet v-else-if="note.format === 'csv'" class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><FileText v-else class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><span class="tab-name">{{ note.name }}</span></button><button class="close-tab" :aria-label="`关闭 ${note.name}`" @click="requestClose(note)"><X :size="13" /></button></div><button class="add-tab" title="新建笔记" @click="newNote"><Plus :size="16" /></button></div>
         <div class="mode-switch" role="group" aria-label="编辑模式"><button aria-label="源码" title="源码" :aria-pressed="mode === 'source'" :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="16" /></button><button aria-label="原位" title="原位" :aria-pressed="mode === 'live'" :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="16" /></button><button aria-label="分屏" title="分屏" :aria-pressed="mode === 'split'" :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="16" /></button></div>
       </div>
-      <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；超过 200 万字符不写恢复草稿，请及时保存。</div>
+      <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；会话上限 256 MiB。</div>
       <div class="writing-area" :class="{ split: mode === 'split' && !large && (isMarkdown || isCsv || isJson), live: mode === 'live' && isMarkdown }">
         <div v-show="!(mode === 'live' && isCsv && !large)" ref="host" class="editor-host"></div>
         <article v-if="mode === 'split' && !large && isMarkdown" ref="previewHost" class="preview" aria-label="Markdown 预览" @scroll="onPreviewScroll" @click.prevent="onPreviewClick" v-html="preview"></article>
         <section v-if="mode === 'split' && !large && isJson" ref="previewHost" class="preview json-preview" aria-label="JSON 结构预览" @scroll="onPreviewScroll" @click="onPreviewClick">
-          <div v-for="(row, index) in jsonRows" :key="index" class="json-preview-row" :class="`json-${row.kind}`" :data-source-start="row.line" :data-source-end="row.line" :data-source-from="row.from" :data-source-to="row.to" :style="{ paddingLeft: `${row.depth * 18}px` }"><span v-if="row.label" class="json-key">{{ row.label }}: </span><span>{{ row.value }}</span></div>
+          <div v-for="(row, index) in jsonRows" :key="index" class="json-preview-row" :class="`json-${row.kind}`" :data-source-start="row.line" :data-source-end="row.line" :data-source-from="row.from" :data-source-to="row.to" :style="{ paddingLeft: `${row.depth * 18}px` }"><span v-if="row.propertyName !== undefined" class="json-key">{{ row.label || '""' }}: </span><span>{{ row.value }}</span></div>
         </section>
         <section v-if="mode !== 'source' && !large && isCsv" ref="previewHost" class="preview csv-preview" :style="mode === 'live' ? { borderLeft: 'none' } : undefined" aria-label="CSV 表格预览" @scroll="onPreviewScroll" @click="onPreviewClick"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead v-if="active?.csvOptions.firstRowHeader"><tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end"><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(active?.csvOptions.firstRowHeader ? 1 : 0)" :key="rowIndex" :data-source-start="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.start" :data-source-end="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.end"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section>
       </div>
@@ -523,5 +703,6 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
     <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false"><section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapDialog($event, settingsElement)"><header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header><div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Newsprint</button><button :aria-pressed="dark" @click="setTheme(true)">Night</button></div></div><label>保存编码 <select :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></label><label>换行格式 <select :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select></label></section></div>
     <div v-if="csvSettingsOpen" class="modal-backdrop" @click.self="csvSettingsOpen = false"><section ref="csvSettingsElement" class="modal settings-modal csv-settings-modal" role="dialog" aria-modal="true" aria-label="CSV设置" @keydown="trapDialog($event, csvSettingsElement)"><header><h2>CSV设置</h2><button aria-label="关闭CSV设置" @click="csvSettingsOpen = false"><X :size="18" /></button></header><label>分隔符 <select :value="active?.csvOptions.delimiter" @change="updateCsvOptions({ delimiter: ($event.target as HTMLSelectElement).value as CsvOptions['delimiter'] })"><option value="">自动识别</option><option value=",">逗号 ,</option><option value=";">分号 ;</option><option value="&#9;">制表符 Tab</option><option value="|">竖线 |</option><option value="custom">自定义</option></select></label><label v-if="active?.csvOptions.delimiter === 'custom'">自定义字符 <input :value="active?.csvOptions.customDelimiter" maxlength="1" @input="setCustomCsvDelimiter($event.target as HTMLInputElement)" /></label><label>引号内转义 <select :value="active?.csvOptions.escapeChar" @change="updateCsvOptions({ escapeChar: ($event.target as HTMLSelectElement).value as CsvOptions['escapeChar'] })"><option value="&quot;">双引号 ""</option><option value="\">反斜杠 \</option></select></label><label class="csv-setting-toggle"><span>首行作为表头</span><input type="checkbox" :checked="active?.csvOptions.firstRowHeader" @change="updateCsvOptions({ firstRowHeader: ($event.target as HTMLInputElement).checked })" /></label><label class="csv-setting-toggle"><span>跳过空行</span><input type="checkbox" :checked="active?.csvOptions.skipEmptyLines" @change="updateCsvOptions({ skipEmptyLines: ($event.target as HTMLInputElement).checked })" /></label></section></div>
     <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存更改？</h2><p>“{{ closePrompt.note.name }}”尚未保存。</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
+    <ContextMenu v-if="context" :x="context.x" :y="context.y" :items="context.items" @close="dismissContext" />
   </div>
 </template>

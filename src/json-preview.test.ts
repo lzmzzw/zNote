@@ -29,3 +29,10 @@ test('preserves large integer and duplicate key literals in the structure view',
   const rows = jsonPreviewRows('{"id":9007199254740993,"id":2}');
   expect(rows.filter(row => row.label === 'id').map(row => row.value)).toEqual(['9007199254740993', '2']);
 });
+
+test('distinguishes empty property names from unnamed root and array nodes', () => {
+  const rows = jsonPreviewRows('{"":{"":1},"items":[2]}');
+  expect(rows.filter(row => row.propertyName === '')).toHaveLength(2);
+  expect(rows.find(row => row.value === '2')?.propertyName).toBeUndefined();
+  expect(rows[0].propertyName).toBeUndefined();
+});

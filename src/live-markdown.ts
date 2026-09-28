@@ -13,6 +13,8 @@ class MarkdownBlockWidget extends WidgetType {
   toDOM(view: EditorView) {
     const element = document.createElement('div');
     element.className = 'preview live-rendered';
+    element.dataset.blockStart = String(this.block.startLine);
+    element.dataset.blockEnd = String(this.block.endLine);
     element.tabIndex = 0;
     element.setAttribute('role', 'button');
     element.setAttribute('aria-label', '编辑 Markdown 块');
@@ -30,7 +32,7 @@ class MarkdownBlockWidget extends WidgetType {
       view.dispatch({ selection: { anchor }, scrollIntoView: true });
       view.focus();
     };
-    element.addEventListener('mousedown', event => { event.preventDefault(); edit(event.target); });
+    element.addEventListener('mousedown', event => { if (event.button !== 0) return; event.preventDefault(); edit(event.target); });
     element.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); }
     });

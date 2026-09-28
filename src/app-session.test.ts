@@ -15,6 +15,8 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(asyn
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: async (handler: typeof bridge.close) => { bridge.close = handler; return () => {}; }, destroy: bridge.destroy }) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
 let app: VueApp | undefined; let root: HTMLDivElement;
+const writeText = vi.fn(async (_text: string) => {});
+const readText = vi.fn(async () => 'pasted');
 async function mount() { root = document.createElement('div'); document.body.append(root); app = createApp(App); app.mount(root); await new Promise(resolve => setTimeout(resolve, 30)); await nextTick(); }
 function unmount() { app?.unmount(); app = undefined; root?.remove(); }
 function key(value: string) { window.dispatchEvent(new KeyboardEvent('keydown', { key: value, ctrlKey: true, bubbles: true })); }
@@ -26,6 +28,118 @@ beforeEach(() => {
   vi.stubGlobal('Worker', class { onmessage = null; postMessage() {} terminate() {} });
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => new DOMRect();
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, readText } });
+  Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => false) });
+  writeText.mockClear(); readText.mockClear();
+});
+
+async function rightClick(element: Element) {
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+  element.dispatchEvent(event); await nextTick(); await nextTick();
+  expect(event.defaultPrevented).toBe(true);
+}
+function labels() { return [...root.querySelectorAll('[role="menuitem"]')].map(button => button.textContent); }
+async function choose(label: string) {
+  const button = [...root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === label)!;
+  expect(button).toBeDefined(); button.click(); await new Promise(resolve => setTimeout(resolve, 10)); await nextTick();
+}
+async function openDoc(name: string, text: string) {
+  bridge.open = { path: `C:/${name}`, text, encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: 'revision' };
+  key('o'); await new Promise(resolve => setTimeout(resolve, 30)); await nextTick();
+}
+describe('regional context menus', () => {
+  it('targets an inactive tab and exposes the exact tab and blank-area commands', async () => {
+    await mount(); key('n'); await nextTick();
+    await rightClick(root.querySelector('.tab')!);
+    expect(labels()).toEqual(['保存', '另存为', '复制文件名', '复制完整路径', '关闭', '关闭左侧标签', '关闭右侧标签', '关闭其他标签', '关闭全部标签']);
+    await choose('复制文件名'); expect(writeText).toHaveBeenLastCalledWith('未命名1.txt');
+    expect(root.querySelector('.tab.active')?.textContent).toContain('未命名2.txt');
+    await rightClick(root.querySelector('.tab-list')!); expect(labels()).toEqual(['新建', '打开文件']);
+  });
+  it('preserves source selection and only offers approved editing commands', async () => {
+    await mount(); editor().dispatch({ changes: { from: 0, insert: 'selected text' }, selection: { anchor: 0, head: 8 } });
+    await rightClick(root.querySelector('.cm-content')!);
+    expect(labels()).toEqual(['剪切', '复制', '粘贴', '纯文本粘贴', '查找与替换']);
+    await choose('复制'); expect(writeText).toHaveBeenLastCalledWith('selected');
+    expect(editor().state.selection.main.to).toBe(8);
+    await rightClick(root.querySelector('.cm-content')!); await choose('纯文本粘贴');
+    expect(editor().state.doc.toString()).toBe('pasted text');
+  });
+  it('rejects delayed paste after the document changes', async () => {
+    await mount();
+    let resolve!: (text: string) => void;
+    readText.mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
+    await rightClick(root.querySelector('.cm-content')!);
+    const paste = [...root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === '粘贴')!;
+    paste.click(); editor().dispatch({ changes: { from: 0, insert: 'newer' } }); resolve('stale');
+    await new Promise(done => setTimeout(done, 10));
+    expect(editor().state.doc.toString()).toBe('newer');
+  });
+  it('stops a close-left batch on cancel without closing later tabs', async () => {
+    await mount(); key('n'); key('n'); await nextTick();
+    await rightClick(root.querySelectorAll('.tab')[2]); await choose('关闭左侧标签');
+    expect(root.querySelector('[role="dialog"]')?.textContent).toContain('未命名1.txt');
+    [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(button => button.textContent === '取消')!.click(); await nextTick();
+    expect(root.querySelectorAll('.tab')).toHaveLength(3);
+  });
+  it('closes a batch in order and retains one empty tab after closing all', async () => {
+    await mount(); key('n'); key('n'); await nextTick();
+    await rightClick(root.querySelectorAll('.tab')[1]); await choose('关闭全部标签');
+    for (const name of ['未命名1.txt', '未命名2.txt', '未命名3.txt']) {
+      expect(root.querySelector('[role="dialog"]')?.textContent).toContain(name);
+      [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(button => button.textContent === '不保存')!.click();
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    expect(root.querySelectorAll('.tab')).toHaveLength(1); expect(editor().state.doc.length).toBe(0);
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+  it('copies CSV cells, rows and columns with TSV quoting and maps to source', async () => {
+    await mount(); await openDoc('table.csv', 'name,value\n"a,b","x\ny"\nc,3');
+    const cell = root.querySelector('tbody td')!;
+    await rightClick(cell); expect(labels()).toEqual(['复制单元格', '复制整行', '复制整列', '定位到源码']);
+    await choose('复制整行'); expect(writeText).toHaveBeenLastCalledWith('a,b\t"x\ny"');
+    await rightClick(cell); await choose('复制整列'); expect(writeText).toHaveBeenLastCalledWith('name\r\na,b\r\nc');
+    await rightClick(root.querySelector('.csv-preview')!); expect(labels()).toEqual(['CSV 设置']);
+    await rightClick(cell); await choose('定位到源码'); expect(editor().state.selection.main.head).toBe(11);
+  });
+  it('copies JSON properties, values and node source without losing integer precision', async () => {
+    await mount(); await openDoc('data.json', '{"id":9007199254740993,"nested":{"x":1}}');
+    const row = [...root.querySelectorAll('.json-preview-row')].find(row => row.textContent?.includes('id:'))!;
+    await rightClick(row); expect(labels()).toEqual(['复制选中文字', '复制属性名', '复制值', '复制节点原文', '定位到源码']);
+    await choose('复制值'); expect(writeText).toHaveBeenLastCalledWith('9007199254740993');
+    await rightClick(row); await choose('复制节点原文'); expect(writeText).toHaveBeenLastCalledWith('"id":9007199254740993');
+    await rightClick(row); await choose('复制属性名'); expect(writeText).toHaveBeenLastCalledWith('id');
+  });
+  it('does not enter a live Markdown block on right-click and copies source or plain text', async () => {
+    await mount(); await openDoc('note.md', '# Title\n\n**bold** text');
+    const block = root.querySelector('.live-rendered')!; const anchor = editor().state.selection.main.head;
+    block.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true }));
+    await rightClick(block); expect(editor().state.selection.main.head).toBe(anchor);
+    expect(labels()).toEqual(['编辑块', '复制块原文', '复制块纯文本']);
+    await choose('复制块原文'); expect(writeText).toHaveBeenLastCalledWith('**bold** text');
+    await rightClick(block); await choose('复制块纯文本'); expect(writeText).toHaveBeenLastCalledWith('bold text');
+  });
+  it('provides preview and outline commands and suppresses chrome-region menus', async () => {
+    await mount(); await openDoc('note.md', '# Title\n\n## Child\n\nParagraph');
+    await rightClick(root.querySelector('.outline-link')!); expect(labels()).toEqual(['复制标题']);
+    await choose('复制标题'); expect(writeText).toHaveBeenLastCalledWith('Title');
+    await rightClick(root.querySelector('.sidebar')!); expect(labels()).toEqual(['全部展开', '全部折叠']);
+    await choose('全部折叠'); expect(root.querySelectorAll('.outline-link')).toHaveLength(1);
+    root.querySelector<HTMLButtonElement>('[aria-label="分屏"]')!.click(); await nextTick();
+    await rightClick(root.querySelector('article.preview p')!); expect(labels()).toEqual(['复制选中文字', '复制所在块原文', '定位到源码']);
+    await choose('复制所在块原文'); expect(writeText).toHaveBeenLastCalledWith('Paragraph');
+    for (const selector of ['.titlebar', '.mode-switch', 'footer', '.cm-gutters']) {
+      await rightClick(root.querySelector(selector)!); expect(root.querySelector('[role="menu"]')).toBeNull();
+    }
+  });
+  it('limits search-input clipboard operations to that input', async () => {
+    await mount(); editor().dispatch({ changes: { from: 0, insert: 'document' } });
+    key('f'); await nextTick();
+    const input = root.querySelector<HTMLInputElement>('input[name="search"]')!; input.value = 'query'; input.setSelectionRange(0, 5);
+    await rightClick(input); expect(labels()).toEqual(['撤销', '剪切', '复制', '粘贴', '全选']);
+    await choose('复制'); expect(writeText).toHaveBeenLastCalledWith('query'); expect(editor().state.doc.toString()).toBe('document');
+    await rightClick(input); await choose('粘贴'); expect(input.value).toBe('pasted'); expect(editor().state.doc.toString()).toBe('document');
+  });
 });
 afterEach(() => { unmount(); vi.unstubAllGlobals(); });
 describe('session lifecycle', () => {
