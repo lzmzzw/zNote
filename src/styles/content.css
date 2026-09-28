@@ -1,0 +1,280 @@
+/* Markdown 基础内容 */
+.preview {
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--font-reading);
+  font-size: var(--font-size-reading);
+  line-height: 1.7;
+  padding: 18px 18px 100px;
+}
+.preview h1 {
+  font-size: 27px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 9px;
+}
+.preview pre {
+  padding: 16px;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  line-height: 1.55;
+}
+.preview blockquote {
+  padding-left: 18px;
+  color: var(--quote);
+  border-left: 3px solid var(--border);
+}
+.preview table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.preview td,
+.preview th {
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+.preview a {
+  color: var(--accent);
+}
+.image-placeholder {
+  color: var(--muted);
+  font-size: 12px;
+}
+.preview [data-source-start] {
+  cursor: text;
+}
+.preview .preview-selected {
+  background: var(--selected);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.preview tr.preview-selected > th,
+.preview tr.preview-selected > td {
+  background: var(--selected);
+}
+.preview h1,
+.preview h2,
+.preview h3,
+.preview h4,
+.preview h5,
+.preview h6 {
+  color: var(--heading);
+  line-height: 1.35;
+}
+.preview pre code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+  font-size: var(--font-size-code);
+  line-height: 1.6;
+  font-family: var(--font-mono);
+}
+.preview :not(pre) > code {
+  background: var(--code-bg);
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 0.9em;
+  font-family: var(--font-mono);
+}
+.preview .contains-task-list {
+  list-style: none;
+}
+.preview .task-list-item-checkbox {
+  margin: 0 7px 0 -22px;
+  accent-color: var(--accent);
+  vertical-align: middle;
+}
+.preview .footnotes {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.preview .footnotes-sep {
+  display: none;
+}
+/* 语法颜色 */
+.preview .hljs-keyword,
+.preview .hljs-selector-tag {
+  color: var(--syntax-keyword);
+}
+.preview .hljs-string,
+.preview .hljs-attr {
+  color: var(--syntax-string);
+}
+.preview .hljs-number,
+.preview .hljs-literal {
+  color: var(--syntax-number);
+}
+.preview .hljs-comment {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+.preview .hljs-title,
+.preview .hljs-type,
+.preview .hljs-built_in {
+  color: var(--syntax-type);
+}
+/* JSON 结构预览 */
+.json-preview {
+  font-size: var(--font-size-code);
+  line-height: 1.6;
+  font-family: var(--font-mono);
+}
+.json-preview-row {
+  min-height: 27px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.json-key {
+  color: var(--accent);
+}
+.json-string {
+  color: var(--syntax-string);
+}
+.json-number,
+.json-boolean {
+  color: var(--syntax-number);
+}
+/* CSV 表格预览 */
+.csv-preview {
+  padding: 20px 24px 80px;
+}
+.csv-table-wrap {
+  width: 100%;
+  overflow: auto;
+}
+.csv-preview table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-code);
+  line-height: 1.6;
+}
+.csv-preview th,
+.csv-preview td {
+  min-width: 100px;
+  max-width: 360px;
+  padding: 8px 12px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.csv-preview th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+}
+.csv-preview tbody tr:nth-child(even) {
+  background: var(--panel);
+}
+.csv-error {
+  color: #b34437;
+}
+.csv-empty {
+  color: var(--muted);
+}
+/* 原位 Markdown 与图表 */
+.live-rendered.preview {
+  display: flow-root;
+  flex: none;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 4px;
+  border: 0;
+  overflow: visible;
+  cursor: text;
+  line-height: 1.7;
+  white-space: normal;
+}
+.live-rendered:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.live-rendered :first-child {
+  margin-top: 0;
+}
+.live-rendered :last-child {
+  margin-bottom: 0;
+}
+.live-rendered p {
+  margin: 7px 0;
+}
+.live-rendered ul,
+.live-rendered ol {
+  padding-left: 28px;
+  margin: 7px 0;
+}
+.live-rendered li {
+  padding: 2px 0;
+}
+.live-rendered li > p {
+  margin: 0;
+}
+.live-rendered table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.live-rendered pre {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.live-rendered blockquote {
+  margin: 8px 0;
+}
+.live-rendered hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+.live-rendered a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.diagram-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  max-width: 100%;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 12px;
+}
+.diagram-preview svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.diagram-preview .diagram-source {
+  margin: 0;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diagram-preview.diagram-error {
+  border-color: var(--accent);
+}
+.live-rendered .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 8px 0;
+}

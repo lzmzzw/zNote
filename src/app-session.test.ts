@@ -155,7 +155,9 @@ describe('regional context menus', () => {
     await rightClick(root.querySelectorAll('.tab')[1]); await choose('关闭全部标签');
     for (const name of ['未命名1.txt', '未命名2.txt', '未命名3.txt']) {
       expect(root.querySelector('[role="dialog"]')?.textContent).toContain(name);
-      [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(button => button.textContent === '不保存')!.click();
+      expect(document.activeElement?.textContent).toBe('取消');
+      const discard = [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(button => button.textContent === '不保存')!;
+      discard.focus(); discard.click();
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     expect(root.querySelectorAll('.tab')).toHaveLength(1); expect(editor().state.doc.length).toBe(0);

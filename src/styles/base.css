@@ -1,0 +1,71 @@
+/* 页面基础、按钮默认状态与滚动条。 */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  background: none;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+button:focus-visible {
+  outline: 2px solid #4a806e;
+  outline-offset: 2px;
+}
+button:hover {
+  background: var(--hover);
+}
+.app {
+  height: 100vh;
+  display: flex;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  flex-direction: column;
+  font-family: var(--font-ui);
+}
+kbd {
+  font:
+    10px 'Segoe UI',
+    sans-serif;
+  color: var(--muted);
+  margin-left: auto;
+}
+.app * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+.app *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.app *::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--scrollbar);
+  background-clip: padding-box;
+}
+.app *::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+  background-clip: padding-box;
+}
+.app *::-webkit-scrollbar-corner {
+  background: transparent;
+}

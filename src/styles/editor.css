@@ -1,0 +1,256 @@
+/* CodeMirror 与搜索面板。important 用于覆盖编辑器运行时注入的默认样式。 */
+.cm-editor {
+  height: 100%;
+  background: transparent !important;
+  color: var(--text) !important;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.cm-scroller {
+  font-family: 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace !important;
+  font-size: var(--font-size-code);
+  line-height: 1.95 !important;
+  overflow: auto !important;
+}
+.cm-content {
+  caret-color: var(--accent);
+  padding: 6px 6px 100px !important;
+}
+.cm-gutters {
+  border: 0 !important;
+  color: var(--muted) !important;
+  font-size: 10px;
+  background: var(--panel) !important;
+  border-right: 1px solid var(--border) !important;
+  padding-left: 0;
+}
+.cm-activeLine {
+  background: var(--selected) !important;
+}
+.cm-activeLineGutter {
+  color: var(--accent) !important;
+  background: var(--selected) !important;
+}
+.cm-selectionBackground {
+  background: var(--selection) !important;
+}
+.live-heading {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-weight: 600;
+  padding-top: 12px !important;
+  padding-bottom: 8px !important;
+  color: var(--heading) !important;
+}
+.live-h1 {
+  font-size: 27px;
+  letter-spacing: -0.6px;
+}
+.live-h2 {
+  font-size: 20px;
+}
+.live-h3 {
+  font-size: 16px;
+}
+.cm-panels {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+.cm-search {
+  padding: 10px !important;
+}
+.cm-textfield {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px;
+}
+.cm-button {
+  background: var(--hover) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+.live-heading span {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 36px !important;
+  padding-left: 4px !important;
+  padding-right: 7px !important;
+}
+.cm-editor:has(.cm-selectionBackground) .cm-activeLine {
+  background: transparent !important;
+}
+.app.dark .cm-activeLine {
+  background: #ffffff0a !important;
+}
+.app.dark .cm-activeLineGutter {
+  background: #ffffff14 !important;
+}
+.writing-area.live .cm-content {
+  max-width: none;
+}
+.writing-area.live.markdown-width-standard .cm-content {
+  max-width: 960px;
+  margin-inline: auto;
+}
+.writing-area.live.markdown-width-compact .cm-content {
+  max-width: 720px;
+  margin-inline: auto;
+}
+.editor-host .cm-editor {
+  position: relative;
+}
+.cm-editor .cm-panels-top.znote-search-floating {
+  position: absolute !important;
+  top: 12px;
+  right: 14px;
+  left: auto;
+  width: min(416px, calc(100% - 28px));
+  z-index: 8;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.cm-editor .cm-panel.cm-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px !important;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 10px 28px #152b1f24;
+  font-size: 12px;
+  font-family: var(--font-ui);
+}
+.cm-search .search-panel-header {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.cm-search .search-panel-header:active {
+  cursor: grabbing;
+}
+.cm-search .search-panel-header strong {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+}
+.cm-search .search-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cm-search .search-panel-row .cm-textfield {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  margin: 0 !important;
+  padding: 0 9px;
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 5px !important;
+  font: inherit;
+}
+.cm-search .search-panel-row .cm-textfield:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+.cm-search button.cm-button,
+.cm-search button[name='close'] {
+  height: 30px;
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 !important;
+  padding: 0 9px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 5px;
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+  font: inherit !important;
+  white-space: nowrap;
+}
+.cm-search button.cm-button:hover,
+.cm-search button[name='close']:hover {
+  background: var(--hover) !important;
+}
+.cm-search button.cm-button:focus-visible,
+.cm-search button[name='close']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cm-search .search-panel-header button[name='close'] {
+  position: static !important;
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+}
+.cm-search .search-panel-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.cm-search .search-panel-options label {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 !important;
+  color: var(--muted);
+  font-size: 11px !important;
+  white-space: nowrap;
+  gap: 6px;
+  cursor: pointer;
+}
+.cm-search .search-panel-options input[type='checkbox'] {
+  margin: 0 !important;
+  accent-color: var(--accent);
+}
+.cm-search .search-panel-options button[name='select'] {
+  margin-left: auto !important;
+  font-size: 11px !important;
+}
+.cm-editor .cm-searchMatch {
+  background: #cde5a5;
+}
+.cm-editor .cm-searchMatch-selected {
+  background: #9cca8a;
+}
+.app.dark .cm-editor .cm-searchMatch {
+  background: #6b654180;
+}
+.app.dark .cm-editor .cm-searchMatch-selected {
+  background: #a89959a6;
+}
+.writing-area.reading .cm-scroller {
+  font-family: var(--font-reading) !important;
+  font-size: var(--font-size-reading);
+  line-height: 1.7 !important;
+}
+.writing-area.structured .cm-scroller {
+  font-family: var(--font-mono) !important;
+  font-size: var(--font-size-code);
+  line-height: 1.6 !important;
+}
+.writing-area .cm-gutters {
+  font-family: var(--font-ui);
+}
+.cm-search .theme-checkbox {
+  width: 15px;
+  height: 15px;
+}

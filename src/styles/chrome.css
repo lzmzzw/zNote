@@ -1,0 +1,284 @@
+/* 桌面窗口与主布局 */
+main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.app-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.titlebar {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding-left: 13px;
+  user-select: none;
+  background: var(--titlebar-bg);
+}
+.titlebar-icon {
+  flex: none;
+  margin-right: 12px;
+}
+.titlebar-drag {
+  flex: 1;
+  height: 100%;
+}
+.window-controls {
+  height: 100%;
+  display: flex;
+}
+.window-controls button {
+  width: 46px;
+  height: 100%;
+  border-radius: 0;
+}
+.window-controls .window-close:hover {
+  background: #c94b47;
+  color: white;
+}
+/* 文档大纲 */
+.sidebar {
+  width: 246px;
+  flex-shrink: 0;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+}
+.outline {
+  overflow: auto;
+  flex: 1;
+}
+.outline button {
+  font-size: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  justify-content: flex-start;
+  text-align: left;
+  color: var(--muted);
+}
+.outline button:first-child {
+  color: var(--text);
+}
+.outline p {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 12px;
+}
+.outline-title {
+  margin: 0 0 12px;
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+.outline-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 29px;
+  border-radius: 3px;
+}
+.outline-row:hover {
+  background: var(--hover);
+}
+.outline .outline-disclosure,
+.outline .outline-disclosure-placeholder {
+  width: 20px;
+  min-width: 20px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: var(--muted);
+}
+.outline .outline-disclosure:hover {
+  color: var(--accent);
+  background: transparent;
+}
+.outline .outline-link {
+  width: auto;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px 0 0;
+  height: 100%;
+  justify-content: flex-start;
+  color: var(--text);
+  font-size: var(--font-size-reading);
+}
+.outline .outline-link:hover {
+  background: transparent;
+  color: var(--accent);
+}
+.outline .outline-empty {
+  margin: 0;
+  padding: 8px 0;
+  color: var(--muted);
+}
+footer .outline-toggle {
+  height: 24px;
+  flex: none;
+  padding: 0;
+  margin-left: -19px;
+  margin-right: auto;
+  color: var(--muted);
+  border-radius: 3px;
+}
+footer .outline-toggle:hover {
+  color: var(--accent);
+}
+/* 标签与编辑模式 */
+.tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  align-items: center;
+  height: 40px;
+  background: var(--tabs-bg);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  max-width: 250px;
+  flex-shrink: 0;
+}
+.tab.active {
+  background: var(--bg);
+  color: var(--accent);
+  box-shadow: inset 0 2px var(--accent);
+}
+.tab > button:first-child {
+  padding: 0 13px;
+  height: 100%;
+  white-space: nowrap;
+  min-width: 0;
+  gap: 8px;
+}
+.tab .close-tab {
+  margin-right: 8px;
+  padding: 4px;
+  border-radius: 4px;
+}
+.add-tab {
+  width: 38px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.mode-switch {
+  display: flex;
+  background: var(--panel);
+  padding: 3px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.mode-switch button {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  gap: 5px;
+}
+.mode-switch .chosen {
+  background: var(--bg);
+  color: var(--accent);
+  box-shadow: 0 1px 3px #0000000c;
+}
+.tab-list {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tabs .mode-switch {
+  margin: 0 8px;
+  align-self: center;
+}
+.tabs .mode-switch button {
+  white-space: nowrap;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  flex: none;
+}
+.tab .tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab .file-icon {
+  flex: none;
+}
+.tab .file-icon.unsaved {
+  color: var(--unsaved);
+}
+.tabs .mode-switch button svg {
+  opacity: 0.62;
+}
+.tabs .mode-switch button.chosen svg,
+.tabs .mode-switch button:hover svg {
+  opacity: 0.85;
+}
+/* 编辑区域与状态提示 */
+.writing-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 0;
+}
+.editor-host {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.split .editor-host {
+  width: 50%;
+  flex: 1;
+}
+.notice {
+  padding: 7px 30px;
+  background: var(--selected);
+  font-size: 11px;
+}
+footer {
+  height: 29px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 19px;
+  padding: 0 19px;
+  font-size: 10px;
+  color: var(--muted);
+  justify-content: flex-end;
+}
+.status-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 44px;
+  z-index: 9;
+  max-width: min(460px, calc(100vw - 32px));
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px #0002;
+  overflow-wrap: anywhere;
+}
