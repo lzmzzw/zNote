@@ -259,6 +259,10 @@ function onContextMenu(event: MouseEvent) {
   }
 }
 const native = isTauri();
+const maximized = ref(false);
+let unlistenResize: (() => void) | undefined;
+async function syncMaximized() { if (native) maximized.value = await getCurrentWindow().isMaximized(); }
+async function toggleMaximized() { await getCurrentWindow().toggleMaximize(); await syncMaximized(); }
 const modalElement = ref<HTMLElement>(); let previousFocus: HTMLElement | null = null;
 const settingsElement = ref<HTMLElement>(); let settingsPreviousFocus: HTMLElement | null = null;
 const csvSettingsElement = ref<HTMLElement>(); let csvSettingsPreviousFocus: HTMLElement | null = null;
@@ -612,6 +616,8 @@ function setLineEnding(value: string) { if (active.value) { active.value.lineEnd
 onMounted(async () => {
   dark.value = localStorage.getItem('znote-theme') === 'dark';
   if (native) {
+    await syncMaximized();
+    unlistenResize = await getCurrentWindow().onResized(() => { void syncMaximized(); });
     try {
       const session = parseSession(await invoke('recovery_load'));
       if (session) {
@@ -648,7 +654,7 @@ onMounted(async () => {
     scheduleRecovery();
   }
 });
-onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEventListener('scroll', onSourceScroll); view?.destroy(); worker?.terminate(); unlisten?.(); unlistenAssociated?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); });
+onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEventListener('scroll', onSourceScroll); view?.destroy(); worker?.terminate(); unlisten?.(); unlistenAssociated?.(); unlistenResize?.(); clearTimeout(refreshTimer); clearTimeout(recoveryTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', shortcuts); });
 </script>
 
 <template>
@@ -670,7 +676,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
         </div></div>
       </nav>
       <div class="titlebar-drag" data-tauri-drag-region></div>
-      <div v-if="native" class="window-controls"><button title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()"><Minus :size="16" /></button><button title="最大化或还原" aria-label="最大化或还原" @click="getCurrentWindow().toggleMaximize()"><Square :size="13" /></button><button class="window-close" title="关闭" aria-label="关闭" @click="closeWindow"><X :size="17" /></button></div>
+      <div v-if="native" class="window-controls"><button title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()"><Minus :size="16" /></button><button :title="maximized ? '还原' : '最大化'" :aria-label="maximized ? '还原' : '最大化'" @click="toggleMaximized"><Copy v-if="maximized" :size="13" /><Square v-else :size="13" /></button><button class="window-close" title="关闭" aria-label="关闭" @click="closeWindow"><X :size="17" /></button></div>
     </div>
     <div class="app-body">
     <aside v-if="isMarkdown && !large && !outlineCollapsed" class="sidebar">

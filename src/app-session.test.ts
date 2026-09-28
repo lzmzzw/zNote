@@ -4,7 +4,7 @@ import { createApp, nextTick, type App as VueApp } from 'vue';
 import { EditorView } from '@codemirror/view';
 import App from './App.vue';
 
-const bridge = vi.hoisted(() => ({ data: null as unknown, close: undefined as undefined | ((event: { preventDefault(): void }) => Promise<void>), destroy: vi.fn(), fail: false, open: null as unknown }));
+const bridge = vi.hoisted(() => ({ data: null as unknown, close: undefined as undefined | ((event: { preventDefault(): void }) => Promise<void>), destroy: vi.fn(), fail: false, open: null as unknown, maximized: false, resized: undefined as undefined | (() => void) }));
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(async (command: string, args?: { data?: unknown }) => {
   if (command === 'recovery_load') return bridge.data;
   if (command === 'recovery_save') { if (bridge.fail) throw new Error('disk full'); bridge.data = JSON.parse(JSON.stringify(args?.data)); }
@@ -12,7 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(asyn
   if (command === 'native_open') return bridge.open;
   if (command === 'native_save') return null;
 }) }));
-vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: async (handler: typeof bridge.close) => { bridge.close = handler; return () => {}; }, destroy: bridge.destroy }) }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: async (handler: typeof bridge.close) => { bridge.close = handler; return () => {}; }, onResized: async (handler: () => void) => { bridge.resized = handler; return () => {}; }, isMaximized: async () => bridge.maximized, toggleMaximize: async () => { bridge.maximized = !bridge.maximized; bridge.resized?.(); }, destroy: bridge.destroy }) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
 let app: VueApp | undefined; let root: HTMLDivElement;
 const writeText = vi.fn(async (_text: string) => {});
@@ -23,7 +23,7 @@ function key(value: string) { window.dispatchEvent(new KeyboardEvent('keydown', 
 function editor() { return EditorView.findFromDOM(root.querySelector('.cm-editor')!)!; }
 async function close() { await bridge.close!({ preventDefault: vi.fn() }); }
 beforeEach(() => {
-  bridge.data = null; bridge.fail = false; bridge.open = null; bridge.destroy.mockClear();
+  bridge.data = null; bridge.fail = false; bridge.open = null; bridge.maximized = false; bridge.resized = undefined; bridge.destroy.mockClear();
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.stubGlobal('Worker', class { onmessage = null; postMessage() {} terminate() {} });
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
@@ -31,6 +31,17 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, readText } });
   Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => false) });
   writeText.mockClear(); readText.mockClear();
+});
+describe('window controls', () => {
+  it('shows the restore icon while maximized and tracks external resize', async () => {
+    await mount();
+    const control = root.querySelector<HTMLButtonElement>('.window-controls button:nth-child(2)')!;
+    expect(control.getAttribute('aria-label')).toBe('最大化');
+    control.click(); await new Promise(resolve => setTimeout(resolve, 0)); await nextTick();
+    expect(control.getAttribute('aria-label')).toBe('还原');
+    bridge.maximized = false; bridge.resized?.(); await new Promise(resolve => setTimeout(resolve, 0)); await nextTick();
+    expect(control.getAttribute('aria-label')).toBe('最大化');
+  });
 });
 
 async function rightClick(element: Element) {

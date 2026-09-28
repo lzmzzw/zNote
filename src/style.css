@@ -114,3 +114,8 @@ footer .outline-toggle:hover{color:var(--accent)}
 .preview pre code{font-size:14px;line-height:1.6}
 .json-preview{font-size:14px;line-height:1.6}
 .cm-editor .cm-panel.cm-search{font-family:var(--font-ui)}
+.tabs{height:40px}
+.cm-content{padding:6px 6px 100px!important}
+.preview{padding:18px 18px 100px}
+.tabs .mode-switch button svg{opacity:.62}
+.tabs .mode-switch button.chosen svg,.tabs .mode-switch button:hover svg{opacity:.85}
