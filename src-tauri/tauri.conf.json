@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "zNote",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.personal.znote",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis"
     ],
@@ -54,5 +55,11 @@
       "../THIRD_PARTY_NOTICES.txt",
       "../resources/licenses/"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGMEMxRDM1RDFFODJCQzIKUldUQ0sralJOUjBNbjkrN2RlNUR1T2kvaEhjakFMYWNrWTdSTkpwZTNmMmFRb24wTzA0Q1JXQWQK",
+      "endpoints": ["https://github.com/lzmzzw/zNote/releases/latest/download/latest.json"]
+    }
   }
 }

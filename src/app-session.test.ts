@@ -5,6 +5,7 @@ import { EditorView } from '@codemirror/view';
 import App from './App.vue';
 
 const bridge = vi.hoisted(() => ({ data: null as unknown, close: undefined as undefined | ((event: { preventDefault(): void }) => Promise<void>), destroy: vi.fn(), fail: false, open: null as unknown, maximized: false, resized: undefined as undefined | (() => void) }));
+const updater = vi.hoisted(() => ({ check: vi.fn(), downloadAndInstall: vi.fn(), relaunch: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(async (command: string, args?: { data?: unknown }) => {
   if (command === 'recovery_load') return bridge.data;
   if (command === 'recovery_save') { if (bridge.fail) throw new Error('disk full'); bridge.data = JSON.parse(JSON.stringify(args?.data)); }
@@ -14,6 +15,9 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(asyn
 }) }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: async (handler: typeof bridge.close) => { bridge.close = handler; return () => {}; }, onResized: async (handler: () => void) => { bridge.resized = handler; return () => {}; }, isMaximized: async () => bridge.maximized, toggleMaximize: async () => { bridge.maximized = !bridge.maximized; bridge.resized?.(); }, destroy: bridge.destroy }) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.1' }));
+vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
+vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: updater.relaunch }));
 let app: VueApp | undefined; let root: HTMLDivElement;
 const writeText = vi.fn(async (_text: string) => {});
 const readText = vi.fn(async () => 'pasted');
@@ -42,6 +46,22 @@ describe('window controls', () => {
     expect(control.getAttribute('aria-label')).toBe('还原');
     bridge.maximized = false; bridge.resized?.(); await new Promise(resolve => setTimeout(resolve, 0)); await nextTick();
     expect(control.getAttribute('aria-label')).toBe('最大化');
+  });
+});
+describe('software updates', () => {
+  it('checks, installs and relaunches from the Help menu', async () => {
+    updater.check.mockResolvedValue({ version: '0.1.2', downloadAndInstall: updater.downloadAndInstall });
+    updater.downloadAndInstall.mockResolvedValue(undefined);
+    updater.relaunch.mockResolvedValue(undefined);
+    await mount();
+    root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click();
+    await nextTick();
+    expect(root.textContent).toContain('当前版本 v0.1.1');
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('检查更新'))!.click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(updater.check).toHaveBeenCalled();
+    expect(updater.downloadAndInstall).toHaveBeenCalled();
+    expect(updater.relaunch).toHaveBeenCalled();
   });
 });
 describe('Markdown width settings', () => {

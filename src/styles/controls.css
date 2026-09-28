@@ -30,6 +30,12 @@
 .menu-popup button kbd {
   font-size: 10px;
 }
+.menu-version {
+  border-top: 1px solid var(--border);
+  padding: 9px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .menu-popup button.checked {
   color: var(--accent);
   background: var(--selected);

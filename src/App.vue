@@ -9,6 +9,10 @@ import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemir
 import { bracketMatching } from '@codemirror/language';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
+import packageJson from '../package.json';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { listen } from '@tauri-apps/api/event';
 import {
   FilePlus2,
@@ -68,6 +72,8 @@ let view: EditorView | undefined;
 const mode = ref<DisplayMode>('live');
 const dark = ref(false);
 const status = ref('准备就绪');
+const appVersion = ref(packageJson.version);
+const checkingUpdate = ref(false);
 const busy = ref(false);
 const position = ref('行 1，列 1');
 const count = ref(0);
@@ -969,29 +975,32 @@ async function clipboardAction(action: 'copy' | 'cut' | 'paste') {
 }
 async function checkUpdates() {
   menu.value = null;
+  if (checkingUpdate.value) return;
+  if (!native) {
+    status.value = '请在安装版中检查更新';
+    return;
+  }
+  checkingUpdate.value = true;
   status.value = '正在检查更新…';
   try {
-    const response = await fetch('https://api.github.com/repos/lzmzzw/zNote/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
-    if (response.status === 404) {
-      status.value = '暂无已发布的更新版本';
+    const update = await check({ timeout: 30000 });
+    if (!update) {
+      status.value = `当前已是最新版本 (${appVersion.value})`;
       return;
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const release = (await response.json()) as { tag_name?: string; html_url?: string };
-    const latest = release.tag_name?.replace(/^v/i, '') ?? '';
-    if (!/^\d+\.\d+\.\d+$/.test(latest)) throw new Error('发布版本无效');
-    const newer = latest
-      .split('.')
-      .map(Number)
-      .some(
-        (part, index, parts) =>
-          part > [0, 1, 0][index] && parts.slice(0, index).every((previous, i) => previous === [0, 1, 0][i]),
-      );
-    status.value = newer ? `发现版本 ${latest}，请访问项目发布页下载` : '当前已是最新版本 (0.1.0)';
+    busy.value = true;
+    if (!(await persistRecovery())) return;
+    status.value = `正在下载版本 ${update.version}…`;
+    await update.downloadAndInstall((event) => {
+      if (event.event === 'Started') status.value = `正在下载版本 ${update.version}…`;
+      if (event.event === 'Finished') status.value = '更新已安装，正在重启…';
+    });
+    await relaunch();
   } catch (error) {
     status.value = `检查更新失败：${error}`;
+  } finally {
+    busy.value = false;
+    checkingUpdate.value = false;
   }
 }
 function closeWindow() {
@@ -1134,6 +1143,7 @@ function setLineEnding(value: string) {
 onMounted(async () => {
   dark.value = localStorage.getItem('znote-theme') === 'dark';
   if (native) {
+    appVersion.value = await getVersion();
     await syncMaximized();
     unlistenResize = await getCurrentWindow().onResized(() => {
       void syncMaximized();
@@ -1352,7 +1362,8 @@ onBeforeUnmount(() => {
               "
             >
               <Settings :size="15" />设置</button
-            ><button @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
+            ><button :disabled="checkingUpdate" @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
+            <div class="menu-version">当前版本 v{{ appVersion }}</div>
           </div>
         </div>
       </nav>

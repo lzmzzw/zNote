@@ -1,6 +1,6 @@
 [package]
 name = "znote"
-version = "0.1.0"
+version = "0.1.1"
 description = "A personal text and Markdown editor"
 authors = ["zNote"]
 edition = "2021"
@@ -22,6 +22,8 @@ sha2 = "0.10"
 tempfile = "3"
 
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

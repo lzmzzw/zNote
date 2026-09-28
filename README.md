@@ -1,6 +1,6 @@
 # zNote
 
-个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.0**，面向 Windows x64。
+个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.1**，面向 Windows x64。
 
 界面使用 Segoe UI 搭配内置 Noto Sans SC；TXT、LOG 和 Markdown 正文、预览使用 Noto Sans SC（16 px，行高 1.7），Markdown 代码块及 JSON/CSV 源码和预览使用内置 Sarasa Mono SC（14 px，行高 1.6）。YAML、TOML、XML、HTML、CSS、JS、TS、RS、SQL 虽按普通文本打开，也使用等宽字体。字体随显示格式切换，阅读与结构化内容不依赖用户额外安装字体。
 
@@ -26,7 +26,7 @@
 | Ctrl+F | 查找与替换 |
 | Ctrl+Z / Ctrl+Y | 撤销 / 重做 |
 
-编辑菜单的复制、剪切、粘贴和纯文本粘贴针对当前编辑器选区；“查找与替换”打开右上悬浮面板，拖动标题可临时移位，关闭后重新打开回到右上角。帮助菜单的检查更新查询 GitHub 最新发布版本，只报告结果，不自动下载安装。操作结果以短暂提示显示。浏览器开发预览只验证编辑界面，本地打开、保存与恢复需要桌面版。
+编辑菜单的复制、剪切、粘贴和纯文本粘贴针对当前编辑器选区；“查找与替换”打开右上悬浮面板，拖动标题可临时移位，关闭后重新打开回到右上角。帮助菜单显示当前安装版本；安装版的“检查更新”从 GitHub Releases 获取签名更新包，发现新版本后下载、安装并重启。操作结果以短暂提示显示。浏览器开发预览只验证编辑界面，本地打开、保存、恢复与更新需要桌面版。
 
 Light 浅色主题使用 `#f3f2ee` 背景与 `#1f0909` 正文。Dark 深色主题使用中性深色层级：标题栏近黑，编辑区为 `#1f1f21`，弹层和选中态以灰阶区分；保留克制的冷灰强调色，避免大面积偏蓝。顶栏菜单采用更小的字号与间距，并使用次级文字色。
 
@@ -60,7 +60,7 @@ CSV 设置和查找替换的复选框使用统一主题外观，保留原生勾�
 - 恢复文件位于 `%APPDATA%/com.personal.znote/recovery.json`。重启采用会话正文而非重新读取源文件；再次保存仍校验磁盘版本，外部修改或删除不会静默覆盖。原生对话框已选过的路径由 Rust 记录并恢复保存授权；关联打开文件仍需首次保存确认路径。旧版草稿迁移为未保存副本，需另存为。恢复数据损坏时保留原文件并提示，不覆盖为新会话。
 - 混合换行文件必须在帮助菜单“设置”中明确选择 LF/CRLF/CR 后保存。无 BOM UTF-16 不自动猜测。GBK 无法表示的字符会拒绝保存，可切换 UTF-8。
 - 保存前两次检查 revision，可检测通常的外部修改；检查与替换之间极短的跨进程竞争窗口不具备完整 CAS 保证。另存为覆盖以原生对话框确认为准。
-- 使用系统 WebView2。未配置发布签名证书和自动安装更新，不自动更改默认文件关联。
+- 使用系统 WebView2。更新包使用 Tauri updater 密钥签名；Windows 安装程序未配置代码签名证书。不自动更改默认文件关联。
 
 ## 开发与构建
 
@@ -77,7 +77,9 @@ pwsh -NoProfile -File scripts/collect-licenses.ps1
 pwsh -NoProfile -File scripts/build.ps1
 ```
 
-`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.0_x64-setup.exe`。NSIS 安装范围为当前用户。依赖升级后重新收集许可再打包。
+`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.1_x64-setup.exe`。NSIS 安装范围为当前用户。依赖升级后重新收集许可再打包。
+
+推送与应用版本一致的 `vX.Y.Z` tag 会触发 `.github/workflows/release.yml`，在 GitHub Actions 构建 Windows NSIS 安装包和 updater 签名，并发布 `latest.json`。仓库 secret `TAURI_SIGNING_PRIVATE_KEY` 保存对应私钥；本地打包更新产物时需设置同名环境变量。正式更新验证须从较低版本的安装版执行“检查更新”，确认下载、安装、重启后的帮助菜单版本号。
 
 ## 设计与验证入口
 

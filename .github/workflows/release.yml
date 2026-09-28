@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - name: Build and publish signed installer
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: zNote ${{ github.ref_name }}
+          releaseBody: Signed zNote Windows release.
+          releaseDraft: false
+          prerelease: false
+          args: --bundles nsis
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
+
+  normalize-updater-json:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = context.ref.replace('refs/tags/', '');
+            const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner, repo, release_id: release.data.id, per_page: 100,
+            });
+            const metadata = assets.find(asset => asset.name === 'latest.json');
+            const installer = assets.find(asset => asset.name.endsWith('-setup.exe'));
+            if (!metadata || !installer) throw new Error('Updater metadata or NSIS installer missing');
+            const response = await github.request('GET /repos/{owner}/{repo}/releases/assets/{asset_id}', {
+              owner, repo, asset_id: metadata.id,
+              headers: { accept: 'application/octet-stream' },
+            });
+            const latest = JSON.parse(Buffer.from(response.data).toString('utf8'));
+            for (const platform of Object.values(latest.platforms ?? {})) {
+              if (platform && typeof platform === 'object') {
+                platform.url = `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(installer.name)}`;
+              }
+            }
+            const data = Buffer.from(JSON.stringify(latest, null, 2) + '\n');
+            await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: metadata.id });
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: release.data.id, name: 'latest.json', data,
+              headers: { 'content-type': 'application/json', 'content-length': data.length },
+            });
