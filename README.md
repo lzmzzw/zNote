@@ -30,6 +30,9 @@
 
 主题核心色参考 Typora 官方 [Newsprint](https://github.com/typora/typora-default-themes/blob/master/themes/newsprint.css) 与 [Night](https://github.com/typora/typora-default-themes/blob/master/themes/night.css) CSS：浅色使用 `#f3f2ee` 背景、`#1f0909` 正文；深色使用 `#363B40` 背景、`#2E3033` 侧栏、`#b8bfc6` 正文。其余控件颜色按 zNote 的结构和可读性适配。
 
+保存编码、换行格式、Markdown 宽度与 CSV 设置共用主题化下拉组件，与顶栏及右键菜单保持一致。支持方向键、Home/End 定位、Enter/空格确认、Esc 收起和 Tab 切换焦点；底栏下拉自动向上展开，选中项显示勾选标记。
+CSV 设置和查找替换的复选框使用统一主题外观，保留原生勾选语义、空格切换和焦点提示。文本输入、导出展开栏和主题分段选择沿用主题化控件；打开、保存等系统文件对话框保留 Windows 原生界面。
+
 ## 右键菜单
 
 | 区域 | 操作 |

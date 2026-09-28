@@ -91,33 +91,18 @@ onBeforeUnmount(() => {
   max-width: calc(100vw - 8px);
   max-height: calc(100vh - 8px);
   overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg);
-  color: var(--text);
-  box-shadow: 0 4px 16px #0003;
-  font-size: 12px;
   outline: none;
 }
 .context-menu button {
   display: block;
   width: 100%;
-  padding: 6px 12px;
   border: 0;
-  border-radius: 3px;
   background: transparent;
   color: inherit;
   font: inherit;
-  line-height: 1.4;
   text-align: left;
   cursor: pointer;
 }
-.context-menu button:not(:disabled):hover,
-.context-menu button:not(:disabled):focus-visible {
-  background: var(--hover);
-  outline: none;
-}
 .context-menu button:disabled { color: var(--muted); cursor: default; }
-.context-menu-separator { height: 1px; margin: 4px 3px; background: var(--border); }
+.context-menu-separator { height: 1px; background: var(--border); }
 </style>

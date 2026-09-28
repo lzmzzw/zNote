@@ -14,7 +14,7 @@ import { tags } from '@lezer/highlight';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { FilePlus2, FolderOpen, Save, Download, Search, FileText, FileCode2, FileJson2, FileSpreadsheet, X, Plus, Code2, Columns2, Eye, ChevronRight, ChevronLeft, ChevronDown, ArrowUp, ArrowDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, FileText, FileCode2, FileJson2, FileSpreadsheet, X, Plus, Code2, Columns2, Eye, ChevronRight, ChevronLeft, ChevronDown, ArrowUp, ArrowDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw, Check } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { defaultCsvOptions, parseCsv, type CsvOptions } from './csv';
@@ -24,6 +24,7 @@ import { hydrateDiagrams } from './diagram';
 import { conversionMenuState, displayMenuState, needsSave, nextUntitledName } from './note-file';
 import { parseSession, serializeEditor, restoreEditor, type Session, type SessionNote } from './session';
 import ContextMenu from './components/ContextMenu.vue';
+import OptionSelect from './components/OptionSelect.vue';
 import { tabCloseTargets, spreadsheetText, type ContextMenuItem } from './context-menu';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
@@ -87,6 +88,14 @@ const menu = ref<'file' | 'edit' | 'format' | 'help' | null>(null);
 const settingsOpen = ref(false);
 const markdownSettingsOpen = ref(false);
 const csvSettingsOpen = ref(false);
+const encodingOptions = ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].map(value => ({ value, label: value }));
+const lineEndingOptions = computed(() => [
+  ...(active.value?.lineEnding === 'Mixed' ? [{ value: 'Mixed', label: 'Mixed', disabled: true }] : []),
+  ...['LF', 'CRLF', 'CR'].map(value => ({ value, label: value })),
+]);
+const widthOptions = [{ value: 'full', label: '全宽' }, { value: 'standard', label: '标准 · 960px' }, { value: 'compact', label: '紧凑 · 720px' }];
+const delimiterOptions = [{ value: '', label: '自动识别' }, { value: ',', label: '逗号 ,' }, { value: ';', label: '分号 ;' }, { value: '\t', label: '制表符 Tab' }, { value: '|', label: '竖线 |' }, { value: 'custom', label: '自定义' }];
+const escapeOptions = [{ value: '"', label: '双引号 ""' }, { value: '\\', label: '反斜杠 \\' }];
 const theme = new Compartment(); const language = new Compartment(); const live = new Compartment(); const editability = new Compartment();
 const large = computed(() => (notes.value.find(note => note.id === activeId.value)?.state.doc.length ?? 0) > 1_000_000);
 const canExport = computed(() => !busy.value && !large.value && isMarkdown.value);
@@ -549,6 +558,12 @@ function decorateSearchPanel(editor: EditorView) {
   const replaceField = panel.querySelector<HTMLInputElement>('input[name="replace"]')!;
   replaceRow.prepend(replaceField);
   const options = document.createElement('div'); options.className = 'search-panel-options';
+  for (const checkbox of panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+    const control = document.createElement('span'); control.className = 'theme-checkbox';
+    checkbox.replaceWith(control); control.append(checkbox);
+    const mark = document.createElement('span'); mark.className = 'checkbox-mark';
+    render(createVNode(Check, { size: 13, 'aria-hidden': true }), mark); control.append(mark);
+  }
   options.append(...panel.querySelectorAll('label'), item('select'));
   panel.replaceChildren(header, findRow, replaceRow, options);
 
@@ -720,13 +735,34 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
         </section>
         <section v-if="mode !== 'source' && !large && isCsv" ref="previewHost" class="preview csv-preview" :style="mode === 'live' ? { borderLeft: 'none' } : undefined" aria-label="CSV 表格预览" @scroll="onPreviewScroll" @click="onPreviewClick"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead v-if="active?.csvOptions.firstRowHeader"><tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end"><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(active?.csvOptions.firstRowHeader ? 1 : 0)" :key="rowIndex" :data-source-start="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.start" :data-source-end="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.end"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section>
       </div>
-      <footer><button v-if="isMarkdown && !large" class="outline-toggle" :style="{ width: `${gutterWidth}px` }" :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :aria-expanded="!outlineCollapsed" @click="outlineCollapsed = !outlineCollapsed"><ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" /></button><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
+      <footer><button v-if="isMarkdown && !large" class="outline-toggle" :style="{ width: `${gutterWidth}px` }" :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :aria-expanded="!outlineCollapsed" @click="outlineCollapsed = !outlineCollapsed"><ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" /></button><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><OptionSelect label="保存编码" compact :model-value="active?.encoding" :options="encodingOptions" @update:model-value="setEncoding" /></footer>
     </main>
     </div>
     <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
-    <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false"><section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapDialog($event, settingsElement)"><header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header><div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Newsprint</button><button :aria-pressed="dark" @click="setTheme(true)">Night</button></div></div><label>保存编码 <select :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></label><label>换行格式 <select :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select></label></section></div>
-    <div v-if="markdownSettingsOpen" class="modal-backdrop" @click.self="markdownSettingsOpen = false"><section ref="markdownSettingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Markdown 设置" @keydown="trapDialog($event, markdownSettingsElement)"><header><h2>Markdown 设置</h2><button aria-label="关闭 Markdown 设置" @click="markdownSettingsOpen = false"><X :size="18" /></button></header><label>显示宽度 <select :value="active?.markdownWidth" @change="setMarkdownWidth(($event.target as HTMLSelectElement).value as MarkdownWidth)"><option value="full">全宽</option><option value="standard">标准 · 960px</option><option value="compact">紧凑 · 720px</option></select></label></section></div>
-    <div v-if="csvSettingsOpen" class="modal-backdrop" @click.self="csvSettingsOpen = false"><section ref="csvSettingsElement" class="modal settings-modal csv-settings-modal" role="dialog" aria-modal="true" aria-label="CSV设置" @keydown="trapDialog($event, csvSettingsElement)"><header><h2>CSV设置</h2><button aria-label="关闭CSV设置" @click="csvSettingsOpen = false"><X :size="18" /></button></header><label>分隔符 <select :value="active?.csvOptions.delimiter" @change="updateCsvOptions({ delimiter: ($event.target as HTMLSelectElement).value as CsvOptions['delimiter'] })"><option value="">自动识别</option><option value=",">逗号 ,</option><option value=";">分号 ;</option><option value="&#9;">制表符 Tab</option><option value="|">竖线 |</option><option value="custom">自定义</option></select></label><label v-if="active?.csvOptions.delimiter === 'custom'">自定义字符 <input :value="active?.csvOptions.customDelimiter" maxlength="1" @input="setCustomCsvDelimiter($event.target as HTMLInputElement)" /></label><label>引号内转义 <select :value="active?.csvOptions.escapeChar" @change="updateCsvOptions({ escapeChar: ($event.target as HTMLSelectElement).value as CsvOptions['escapeChar'] })"><option value="&quot;">双引号 ""</option><option value="\">反斜杠 \</option></select></label><label class="csv-setting-toggle"><span>首行作为表头</span><input type="checkbox" :checked="active?.csvOptions.firstRowHeader" @change="updateCsvOptions({ firstRowHeader: ($event.target as HTMLInputElement).checked })" /></label><label class="csv-setting-toggle"><span>跳过空行</span><input type="checkbox" :checked="active?.csvOptions.skipEmptyLines" @change="updateCsvOptions({ skipEmptyLines: ($event.target as HTMLInputElement).checked })" /></label></section></div>
+    <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false">
+      <section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapDialog($event, settingsElement)">
+        <header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header>
+        <div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Newsprint</button><button :aria-pressed="dark" @click="setTheme(true)">Night</button></div></div>
+        <div class="setting-row"><span>保存编码</span><OptionSelect label="保存编码" :model-value="active?.encoding" :options="encodingOptions" @update:model-value="setEncoding" /></div>
+        <div class="setting-row"><span>换行格式</span><OptionSelect label="换行格式" :model-value="active?.lineEnding" :options="lineEndingOptions" @update:model-value="setLineEnding" /></div>
+      </section>
+    </div>
+    <div v-if="markdownSettingsOpen" class="modal-backdrop" @click.self="markdownSettingsOpen = false">
+      <section ref="markdownSettingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Markdown 设置" @keydown="trapDialog($event, markdownSettingsElement)">
+        <header><h2>Markdown 设置</h2><button aria-label="关闭 Markdown 设置" @click="markdownSettingsOpen = false"><X :size="18" /></button></header>
+        <div class="setting-row"><span>显示宽度</span><OptionSelect label="显示宽度" :model-value="active?.markdownWidth" :options="widthOptions" @update:model-value="setMarkdownWidth($event as MarkdownWidth)" /></div>
+      </section>
+    </div>
+    <div v-if="csvSettingsOpen" class="modal-backdrop" @click.self="csvSettingsOpen = false">
+      <section ref="csvSettingsElement" class="modal settings-modal csv-settings-modal" role="dialog" aria-modal="true" aria-label="CSV设置" @keydown="trapDialog($event, csvSettingsElement)">
+        <header><h2>CSV设置</h2><button aria-label="关闭CSV设置" @click="csvSettingsOpen = false"><X :size="18" /></button></header>
+        <div class="setting-row"><span>分隔符</span><OptionSelect label="分隔符" :model-value="active?.csvOptions.delimiter" :options="delimiterOptions" @update:model-value="updateCsvOptions({ delimiter: $event as CsvOptions['delimiter'] })" /></div>
+        <label v-if="active?.csvOptions.delimiter === 'custom'" class="setting-row">自定义字符 <input :value="active?.csvOptions.customDelimiter" maxlength="1" @input="setCustomCsvDelimiter($event.target as HTMLInputElement)" /></label>
+        <div class="setting-row"><span>引号内转义</span><OptionSelect label="引号内转义" :model-value="active?.csvOptions.escapeChar" :options="escapeOptions" @update:model-value="updateCsvOptions({ escapeChar: $event as CsvOptions['escapeChar'] })" /></div>
+        <label class="csv-setting-toggle"><span>首行作为表头</span><span class="theme-checkbox"><input type="checkbox" :checked="active?.csvOptions.firstRowHeader" @change="updateCsvOptions({ firstRowHeader: ($event.target as HTMLInputElement).checked })" /><span class="checkbox-mark"><Check :size="13" aria-hidden="true" /></span></span></label>
+        <label class="csv-setting-toggle"><span>跳过空行</span><span class="theme-checkbox"><input type="checkbox" :checked="active?.csvOptions.skipEmptyLines" @change="updateCsvOptions({ skipEmptyLines: ($event.target as HTMLInputElement).checked })" /><span class="checkbox-mark"><Check :size="13" aria-hidden="true" /></span></span></label>
+      </section>
+    </div>
     <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存更改？</h2><p>“{{ closePrompt.note.name }}”尚未保存。</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
     <ContextMenu v-if="context" :x="context.x" :y="context.y" :items="context.items" @close="dismissContext" />
   </div>

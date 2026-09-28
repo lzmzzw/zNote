@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.stubGlobal('Worker', class { onmessage = null; postMessage() {} terminate() {} });
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => new DOMRect();
+  Element.prototype.scrollIntoView = vi.fn();
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, readText } });
   Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => false) });
   writeText.mockClear(); readText.mockClear();
@@ -83,9 +84,10 @@ describe('Markdown width settings', () => {
     [...root.querySelectorAll<HTMLButtonElement>('.menu-group > button')].find(button => button.textContent === '格式')!.click();
     await nextTick();
     [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('Markdown 设置'))!.click();
-    await nextTick();
-    const width = root.querySelector<HTMLSelectElement>('[aria-label="Markdown 设置"] select')!;
-    width.value = 'compact'; width.dispatchEvent(new Event('change', { bubbles: true })); await nextTick();
+    await nextTick(); await nextTick();
+    const width = root.querySelector<HTMLButtonElement>('[role="combobox"][aria-label="显示宽度"]')!;
+    width.click(); await nextTick(); await nextTick();
+    [...root.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent?.includes('720px'))!.click(); await nextTick();
     expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-compact')).toBe(true);
     root.querySelector<HTMLButtonElement>('[aria-label="关闭 Markdown 设置"]')!.click(); await nextTick();
     await openDoc('other.md', '# second');
