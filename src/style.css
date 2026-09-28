@@ -101,3 +101,16 @@ footer .outline-toggle:hover{color:var(--accent)}
 .tab .file-icon.unsaved{color:#c24543}
 .app.dark .tab .file-icon.unsaved{color:#eb7771}
 .menu-popup button:disabled{cursor:not-allowed}
+
+@font-face{font-family:"zNote Sans SC";src:url("./assets/NotoSansSC.ttf") format("truetype");font-style:normal;font-weight:100 900;font-display:swap}
+@font-face{font-family:"zNote Mono SC";src:url("./assets/SarasaMonoSC-Regular.ttf") format("truetype");font-style:normal;font-weight:400;font-display:swap}
+.app{--font-ui:"Segoe UI","zNote Sans SC",sans-serif;--font-reading:"zNote Sans SC","Microsoft YaHei",sans-serif;--font-mono:"zNote Mono SC","Sarasa Mono SC",Consolas,monospace;font-family:var(--font-ui)}
+.writing-area.reading .cm-scroller{font-family:var(--font-reading)!important;font-size:16px;line-height:1.7!important}
+.writing-area.structured .cm-scroller{font-family:var(--font-mono)!important;font-size:14px;line-height:1.6!important}
+.writing-area .cm-gutters{font-family:var(--font-ui)}
+.writing-area.live .live-code{font-family:var(--font-mono)!important;font-size:14px;line-height:1.6!important}
+.preview{font-family:var(--font-reading);font-size:16px;line-height:1.7}
+.preview pre code,.preview :not(pre)>code,.json-preview{font-family:var(--font-mono)}
+.preview pre code{font-size:14px;line-height:1.6}
+.json-preview{font-size:14px;line-height:1.6}
+.cm-editor .cm-panel.cm-search{font-family:var(--font-ui)}

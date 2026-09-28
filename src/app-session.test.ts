@@ -142,6 +142,22 @@ describe('regional context menus', () => {
   });
 });
 afterEach(() => { unmount(); vi.unstubAllGlobals(); });
+
+describe('editor typography', () => {
+  it('uses reading type for prose and monospaced type for structured text', async () => {
+    await mount();
+    expect(root.querySelector('.writing-area')?.classList.contains('reading')).toBe(true);
+    await openDoc('query.sql', 'select 1');
+    expect(root.querySelector('.writing-area')?.classList.contains('structured')).toBe(true);
+    await openDoc('notes.txt', '中文正文');
+    expect(root.querySelector('.writing-area')?.classList.contains('reading')).toBe(true);
+    [...root.querySelectorAll<HTMLButtonElement>('.app-menu button')].find(button => button.textContent === '格式')!.click();
+    await nextTick();
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent === '显示为 JSON')!.click();
+    await nextTick();
+    expect(root.querySelector('.writing-area')?.classList.contains('structured')).toBe(true);
+  });
+});
 describe('session lifecycle', () => {
   it('starts with empty txt and restores temporary tabs with no exit prompt', async () => {
     await mount();

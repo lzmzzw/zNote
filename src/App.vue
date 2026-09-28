@@ -70,6 +70,7 @@ const jsonRows = ref<JsonPreviewRow[]>([]); const previewHost = ref<HTMLElement>
 let pendingSourceScroll: number | null = null; let pendingPreviewScroll: number | null = null;
 let cachedScrollAnchors: { source: number; preview: number }[] | null = null;
 const currentFormat = computed(() => notes.value.find(note => note.id === activeId.value)?.format);
+const isStructuredText = computed(() => currentFormat.value === 'txt' && /\.(?:ya?ml|toml|xml|html|css|js|ts|rs|sql)$/i.test(active.value?.name ?? ''));
 const isCsv = computed(() => currentFormat.value === 'csv');
 const isMarkdown = computed(() => currentFormat.value === 'markdown');
 const isJson = computed(() => currentFormat.value === 'json');
@@ -634,6 +635,7 @@ onMounted(async () => {
   }
   if (!notes.value.length) createNote();
   view = new EditorView({ state: active.value!.state, parent: host.value }); view.scrollDOM.addEventListener('scroll', onSourceScroll); refreshDerived();
+  if (document.fonts?.load) void Promise.allSettled([document.fonts.load('16px "zNote Sans SC"'), document.fonts.load('14px "zNote Mono SC"')]).then(() => view?.requestMeasure());
   selectNote(active.value!);
   const gutters = view.dom.querySelector<HTMLElement>('.cm-gutters');
   if (gutters) { gutterObserver = new ResizeObserver(() => { gutterWidth.value = gutters.getBoundingClientRect().width; }); gutterObserver.observe(gutters); gutterWidth.value = gutters.getBoundingClientRect().width; }
@@ -688,7 +690,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
         <div class="mode-switch" role="group" aria-label="编辑模式"><button aria-label="源码" title="源码" :aria-pressed="mode === 'source'" :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="16" /></button><button aria-label="原位" title="原位" :aria-pressed="mode === 'live'" :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="16" /></button><button aria-label="分屏" title="分屏" :aria-pressed="mode === 'split'" :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="16" /></button></div>
       </div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；会话上限 256 MiB。</div>
-      <div class="writing-area" :class="{ split: mode === 'split' && !large && (isMarkdown || isCsv || isJson), live: mode === 'live' && isMarkdown }">
+      <div class="writing-area" :class="{ split: mode === 'split' && !large && (isMarkdown || isCsv || isJson), live: mode === 'live' && isMarkdown, reading: (currentFormat === 'txt' && !isStructuredText) || isMarkdown, structured: isJson || isCsv || isStructuredText }">
         <div v-show="!(mode === 'live' && isCsv && !large)" ref="host" class="editor-host"></div>
         <article v-if="mode === 'split' && !large && isMarkdown" ref="previewHost" class="preview" aria-label="Markdown 预览" @scroll="onPreviewScroll" @click.prevent="onPreviewClick" v-html="preview"></article>
         <section v-if="mode === 'split' && !large && isJson" ref="previewHost" class="preview json-preview" aria-label="JSON 结构预览" @scroll="onPreviewScroll" @click="onPreviewClick">

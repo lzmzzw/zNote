@@ -38,6 +38,8 @@ try {
   }
   Copy-Item -LiteralPath (Join-Path $root 'src/assets/NotoSansSC-OFL.txt') -Destination (Join-Path $destination 'font-NotoSansSC-OFL.txt') -Force
   $notices.Add('font Noto Sans SC | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl/notosanssc')
+  Copy-Item -LiteralPath (Join-Path $root 'src/assets/SarasaMonoSC-OFL.txt') -Destination (Join-Path $destination 'font-SarasaMonoSC-OFL.txt') -Force
+  $notices.Add('font Sarasa Mono SC 1.0.42 | OFL-1.1 | https://github.com/be5invis/Sarasa-Gothic/releases/tag/v1.0.42')
   [System.IO.File]::WriteAllLines((Join-Path $root 'THIRD_PARTY_NOTICES.txt'), $notices, [System.Text.UTF8Encoding]::new($false))
   Write-Output "Collected $copied license files for $($packages.Count) dependency records."
 } finally { Pop-Location }

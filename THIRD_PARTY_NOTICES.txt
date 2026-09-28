@@ -825,3 +825,4 @@ npm xml 1.0.1 | MIT |
 npm xml-js 1.6.11 | MIT |
 npm xmldoc 2.0.3 | MIT |
 font Noto Sans SC | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl/notosanssc
+font Sarasa Mono SC 1.0.42 | OFL-1.1 | https://github.com/be5invis/Sarasa-Gothic/releases/tag/v1.0.42
