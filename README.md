@@ -1,6 +1,6 @@
 # zNote
 
-个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.1**，面向 Windows x64。
+个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.2**，面向 Windows x64。
 
 界面使用 Segoe UI 搭配内置 Noto Sans SC；TXT、LOG 和 Markdown 正文、预览使用 Noto Sans SC（16 px，行高 1.7），Markdown 代码块及 JSON/CSV 源码和预览使用内置 Sarasa Mono SC（14 px，行高 1.6）。YAML、TOML、XML、HTML、CSS、JS、TS、RS、SQL 虽按普通文本打开，也使用等宽字体。字体随显示格式切换，阅读与结构化内容不依赖用户额外安装字体。
 
@@ -77,7 +77,7 @@ pwsh -NoProfile -File scripts/collect-licenses.ps1
 pwsh -NoProfile -File scripts/build.ps1
 ```
 
-`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.1_x64-setup.exe`。NSIS 安装范围为当前用户。依赖升级后重新收集许可再打包。
+`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.2_x64-setup.exe`。NSIS 安装范围为当前用户。依赖升级后重新收集许可再打包。
 
 推送与应用版本一致的 `vX.Y.Z` tag 会触发 `.github/workflows/release.yml`，在 GitHub Actions 构建 Windows NSIS 安装包和 updater 签名，并发布 `latest.json`。仓库 secret `TAURI_SIGNING_PRIVATE_KEY` 保存对应私钥；本地打包更新产物时需设置同名环境变量。正式更新验证须从较低版本的安装版执行“检查更新”，确认下载、安装、重启后的帮助菜单版本号。
 

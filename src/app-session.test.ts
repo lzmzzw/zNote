@@ -15,7 +15,7 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn(asyn
 }) }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: async (handler: typeof bridge.close) => { bridge.close = handler; return () => {}; }, onResized: async (handler: () => void) => { bridge.resized = handler; return () => {}; }, isMaximized: async () => bridge.maximized, toggleMaximize: async () => { bridge.maximized = !bridge.maximized; bridge.resized?.(); }, destroy: bridge.destroy }) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
-vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.1' }));
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.2' }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: updater.relaunch }));
 let app: VueApp | undefined; let root: HTMLDivElement;
@@ -50,14 +50,14 @@ describe('window controls', () => {
 });
 describe('software updates', () => {
   it('checks, installs and relaunches from the Help menu', async () => {
-    updater.check.mockResolvedValue({ version: '0.1.2', downloadAndInstall: updater.downloadAndInstall });
+    updater.check.mockResolvedValue({ version: '0.1.3', downloadAndInstall: updater.downloadAndInstall });
     updater.downloadAndInstall.mockResolvedValue(undefined);
     updater.relaunch.mockResolvedValue(undefined);
     await mount();
     root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click();
     await nextTick();
     const updateButton = [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('检查更新'))!;
-    expect(updateButton.textContent).toContain('v0.1.1');
+    expect(updateButton.textContent).toContain('v0.1.2');
     expect(root.textContent).not.toContain('当前版本');
     updateButton.click();
     await new Promise(resolve => setTimeout(resolve, 30));

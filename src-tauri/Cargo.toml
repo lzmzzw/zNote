@@ -1,6 +1,6 @@
 [package]
 name = "znote"
-version = "0.1.1"
+version = "0.1.2"
 description = "A personal text and Markdown editor"
 authors = ["zNote"]
 edition = "2021"
