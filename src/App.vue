@@ -25,13 +25,15 @@ import { hydrateDiagrams } from './diagram';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
+type DisplayMode = 'source' | 'live' | 'split';
+function defaultMode(format: NoteFormat): DisplayMode { return format === 'json' ? 'split' : format === 'markdown' || format === 'csv' ? 'live' : 'source'; }
 function formatForName(name: string): NoteFormat { return /\.md$|\.markdown$/i.test(name) ? 'markdown' : /\.(jsonc?|geojson)$/i.test(name) ? 'json' : /\.csv$/i.test(name) ? 'csv' : 'txt'; }
-interface Note extends NativeDocument { id: number; name: string; format: NoteFormat; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean; requiresSaveAs: boolean }
+interface Note extends NativeDocument { id: number; name: string; format: NoteFormat; mode: DisplayMode; state: EditorState; saved: string; version: number; dirty: boolean; metaDirty: boolean; requiresSaveAs: boolean }
 const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式排版未编辑的 Markdown 块，点击后直接修改源码。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
-const mode = ref<'source' | 'live' | 'split'>('live'); const dark = ref(false);
+const mode = ref<DisplayMode>('live'); const dark = ref(false);
 const codeColors = (night: boolean) => HighlightStyle.define([
   { tag: [tags.keyword, tags.operatorKeyword], color: night ? '#c88fd0' : '#8b405d' },
   { tag: [tags.string, tags.special(tags.string)], color: night ? '#d99586' : '#9c4d35' },
@@ -155,8 +157,9 @@ function onPreviewClick(event: MouseEvent) {
   if (!target || !view) return;
   const line = Math.min(view.state.doc.lines, Number(target.dataset.sourceStart));
   const anchor = target.dataset.sourceFrom === undefined ? view.state.doc.line(line).from : Number(target.dataset.sourceFrom);
+  if (isCsv.value && mode.value === 'live') changeMode('source');
   view.dispatch({ selection: { anchor }, scrollIntoView: true });
-  view.focus();
+  void nextTick(() => { view?.requestMeasure(); view?.focus(); });
 }
 function languageFor(format: NoteFormat, size: number): Extension { return size > 1_000_000 ? [] : format === 'json' ? json() : format === 'markdown' ? markdown({ codeLanguages: languages }) : []; }
 function stateFor(text: string, format: NoteFormat) {
@@ -168,12 +171,12 @@ function stateFor(text: string, format: NoteFormat) {
 }
 function createNote(doc?: NativeDocument, name = '未命名.txt') {
   const text = doc?.text ?? ''; const noteName = doc?.path?.split(/[\\/]/).pop() ?? name; const format = formatForName(noteName);
-  const note: Note = { path: null, text: '', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null, ...doc, id: nextId++, name: noteName, format, state: stateFor(text, format), saved: text, version: 0, dirty: false, metaDirty: false, requiresSaveAs: false };
+  const note: Note = { path: null, text: '', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null, ...doc, id: nextId++, name: noteName, format, mode: defaultMode(format), state: stateFor(text, format), saved: text, version: 0, dirty: false, metaDirty: false, requiresSaveAs: false };
   notes.value = [...notes.value, note]; selectNote(note); return note;
 }
-function selectNote(note: Note) { if (view && active.value) active.value.state = view.state; activeId.value = note.id; view?.setState(note.state); cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); const head = note.state.selection.main.head; const line = note.state.doc.lineAt(head); position.value = `行 ${line.number}，列 ${head - line.from + 1}`; view?.focus(); }
+function selectNote(note: Note) { if (view && active.value) active.value.state = view.state; activeId.value = note.id; mode.value = note.mode; view?.setState(note.state); cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); const head = note.state.selection.main.head; const line = note.state.doc.lineAt(head); position.value = `行 ${line.number}，列 ${head - line.from + 1}`; if (!(isCsv.value && mode.value === 'live' && !large.value)) void nextTick(() => { view?.requestMeasure(); view?.focus(); }); }
 function reconfigure() { if (!view || !active.value) return; view.dispatch({ effects: [theme.reconfigure(editorAppearance(dark.value)), language.reconfigure(languageFor(active.value.format, view.state.doc.length)), live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? liveMarkdownBlocks(dark.value) : [])] }); }
-function changeMode(value: typeof mode.value) { mode.value = value; cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); }
+function changeMode(value: DisplayMode) { mode.value = value; if (active.value) active.value.mode = value; cachedScrollAnchors = null; pendingSourceScroll = null; pendingPreviewScroll = null; reconfigure(); refreshDerived(); void nextTick(() => view?.requestMeasure()); }
 function setTheme(night: boolean) { dark.value = night; localStorage.setItem('znote-theme', night ? 'dark' : 'light'); reconfigure(); refreshDerived(); }
 function refreshDerived() {
   if (!active.value) return; const doc = active.value.state.doc; count.value = doc.length;
@@ -181,7 +184,7 @@ function refreshDerived() {
   if (doc.length > 1_000_000) { headings.value = []; preview.value = ''; csvRows.value = []; csvRowLines.value = []; jsonRows.value = []; csvError.value = null; reconfigure(); return; }
   const text = doc.toString(); active.value.dirty = active.value.metaDirty || text !== active.value.saved; touch();
   headings.value = isMarkdown.value ? buildOutline(markdownHeadings(text).map(item => ({ title: item.title, level: item.level, from: doc.line(item.line).from }))) : [];
-  if (mode.value === 'split') {
+  if (mode.value === 'split' || (mode.value === 'live' && isCsv.value)) {
     if (isCsv.value) { const parsed = parseCsv(text); csvRows.value = parsed.rows; csvRowLines.value = parsed.rowLines; csvError.value = parsed.error; }
     else if (isMarkdown.value) preview.value = renderMarkdown(text);
     else if (isJson.value) jsonRows.value = jsonPreviewRows(text);
@@ -189,7 +192,7 @@ function refreshDerived() {
   }
 }
 function newNote() { createNote(); changeMode('source'); status.value = '新建笔记'; }
-async function openFile() { if (!native) { status.value = '浏览器预览模式：本地打开与保存请使用桌面版'; return; } busy.value = true; try { const doc = await invoke<NativeDocument | null>('native_open'); if (doc) { const existing = notes.value.find(n => n.path?.toLowerCase() === doc.path?.toLowerCase()); if (existing) { existing.requiresSaveAs = false; selectNote(existing); } else createNote(doc); if (active.value?.format === 'csv') changeMode('split'); else if (active.value?.format === 'txt' && mode.value === 'split') changeMode('source'); status.value = '文件已打开'; } } catch (e) { status.value = String(e); } finally { busy.value = false; } }
+async function openFile() { if (!native) { status.value = '浏览器预览模式：本地打开与保存请使用桌面版'; return; } busy.value = true; try { const doc = await invoke<NativeDocument | null>('native_open'); if (doc) { const existing = notes.value.find(n => n.path?.toLowerCase() === doc.path?.toLowerCase()); if (existing) { existing.requiresSaveAs = false; selectNote(existing); } else createNote(doc); status.value = '文件已打开'; } } catch (e) { status.value = String(e); } finally { busy.value = false; } }
 async function openAssociatedFiles() {
   if (openingAssociated) { pendingAssociated = true; return; }
   openingAssociated = true;
@@ -203,8 +206,6 @@ async function openAssociatedFiles() {
         const existing = notes.value.find(note => note.path?.toLowerCase() === path.toLowerCase());
         if (existing) selectNote(existing);
         else { const note = createNote(doc); note.requiresSaveAs = true; }
-        if (active.value?.format === 'csv') changeMode('split');
-        else if (active.value?.format === 'txt' && mode.value === 'split') changeMode('source');
       }
       if (result.errors.length) status.value = `打开文件失败：${result.errors.join('；')}`;
       else if (result.documents.length) status.value = '文件已打开；首次保存需确认位置';
@@ -266,12 +267,12 @@ function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   const note = active.value; menu.value = null; if (!note) return;
   note.format = format;
   if (!note.path) note.name = note.name.replace(/\.[^.]+$/, '') + ({ markdown: '.md', json: '.json', csv: '.csv' }[format]);
-  if (format === 'csv') mode.value = 'split';
+  changeMode(defaultMode(format));
   touch(); reconfigure(); refreshDerived(); scheduleRecovery(); status.value = `已切换为 ${format === 'markdown' ? 'Markdown' : format.toUpperCase()}`;
   if (format === 'json' && note.state.doc.length && !/\.jsonc$/i.test(note.name)) formatJson();
 }
 function toggleMenu(value: typeof menu.value) { menu.value = menu.value === value ? null : value; }
-function searchPanel(replace = false) { menu.value = null; if (!view) return; openSearchPanel(view); if (replace) requestAnimationFrame(() => (view?.dom.querySelector('.cm-search input[name="replace"]') as HTMLInputElement | null)?.focus()); }
+function searchPanel(replace = false) { menu.value = null; if (!view) return; if (isCsv.value && mode.value === 'live') changeMode('source'); openSearchPanel(view); void nextTick(() => { view?.requestMeasure(); (view?.dom.querySelector(replace ? '.cm-search input[name="replace"]' : '.cm-search input[name="search"]') as HTMLInputElement | null)?.focus(); }); }
 async function clipboardAction(action: 'copy' | 'cut' | 'paste') {
   menu.value = null; if (!view || busy.value) return;
   const current = view; const selection = current.state.selection.main; const note = active.value; const version = note?.version;
@@ -310,7 +311,7 @@ async function persistRecovery(excludeId?: number): Promise<boolean> {
 }
 function scheduleRecovery() { if (!native) return; clearTimeout(recoveryTimer); recoveryTimer = setTimeout(() => { void persistRecovery(); }, 1500); }
 
-function shortcuts(e: KeyboardEvent) { if (e.key === 'Escape') { menu.value = null; if (settingsOpen.value) settingsOpen.value = false; } if (closePrompt.value) { if (e.key === 'Escape') { e.preventDefault(); void resolveClose('cancel'); } if (e.key === 'Tab') { const buttons = [...(modalElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]; const first = buttons[0]; const last = buttons[buttons.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } if (e.ctrlKey || e.metaKey) e.preventDefault(); return; } if (!(e.ctrlKey || e.metaKey)) return; const k = e.key.toLowerCase(); if (['n', 'o', 's', 'w'].includes(k)) { e.preventDefault(); if (busy.value) return; if (k === 'n') newNote(); if (k === 'o') void openFile(); if (k === 's') void saveNote(active.value, e.shiftKey); if (k === 'w' && active.value) requestClose(active.value); } }
+function shortcuts(e: KeyboardEvent) { if (e.key === 'Escape') { menu.value = null; if (settingsOpen.value) settingsOpen.value = false; } if (closePrompt.value) { if (e.key === 'Escape') { e.preventDefault(); void resolveClose('cancel'); } if (e.key === 'Tab') { const buttons = [...(modalElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]; const first = buttons[0]; const last = buttons[buttons.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } if (e.ctrlKey || e.metaKey) e.preventDefault(); return; } if (!(e.ctrlKey || e.metaKey)) return; const k = e.key.toLowerCase(); if (isCsv.value && mode.value === 'live' && (k === 'f' || k === 'h')) { e.preventDefault(); searchPanel(k === 'h'); return; } if (['n', 'o', 's', 'w'].includes(k)) { e.preventDefault(); if (busy.value) return; if (k === 'n') newNote(); if (k === 'o') void openFile(); if (k === 's') void saveNote(active.value, e.shiftKey); if (k === 'w' && active.value) requestClose(active.value); } }
 function setEncoding(value: string) { if (active.value) { active.value.encoding = value; active.value.bom = value.startsWith('UTF-16'); active.value.dirty = true; active.value.metaDirty = true; active.value.version++; touch(); scheduleRecovery(); status.value = `保存时使用 ${value}`; } }
 function setLineEnding(value: string) { if (active.value) { active.value.lineEnding = value; active.value.dirty = true; active.value.metaDirty = true; active.value.version++; touch(); scheduleRecovery(); status.value = `保存时统一换行为 ${value}`; } }
 function beforeUnload(e: BeforeUnloadEvent) { if (notes.value.some(n => n.dirty)) { e.preventDefault(); e.returnValue = ''; } }
@@ -323,7 +324,7 @@ onMounted(async () => {
   window.addEventListener('keydown', shortcuts); window.addEventListener('beforeunload', beforeUnload);
   if (native) { unlisten = await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); if (notes.value.some(n => n.dirty)) closePrompt.value = { kind: 'window' }; else { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } });
     unlistenAssociated = await listen('associated-file-open', () => { void openAssociatedFiles(); });
-    try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; reconfigure(); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
+    try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; changeMode(defaultMode(note.format)); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
     await openAssociatedFiles();
   }
 });
@@ -370,12 +371,12 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
       </div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；超过 200 万字符不写恢复草稿，请及时保存。</div>
       <div class="writing-area" :class="{ split: mode === 'split' && !large && (isMarkdown || isCsv || isJson), live: mode === 'live' && isMarkdown }">
-        <div ref="host" class="editor-host"></div>
+        <div v-show="!(mode === 'live' && isCsv && !large)" ref="host" class="editor-host"></div>
         <article v-if="mode === 'split' && !large && isMarkdown" ref="previewHost" class="preview" aria-label="Markdown 预览" @scroll="onPreviewScroll" @click.prevent="onPreviewClick" v-html="preview"></article>
         <section v-if="mode === 'split' && !large && isJson" ref="previewHost" class="preview json-preview" aria-label="JSON 结构预览" @scroll="onPreviewScroll" @click="onPreviewClick">
           <div v-for="(row, index) in jsonRows" :key="index" class="json-preview-row" :class="`json-${row.kind}`" :data-source-start="row.line" :data-source-end="row.line" :data-source-from="row.from" :data-source-to="row.to" :style="{ paddingLeft: `${row.depth * 18}px` }"><span v-if="row.label" class="json-key">{{ row.label }}: </span><span>{{ row.value }}</span></div>
         </section>
-        <section v-if="mode === 'split' && !large && isCsv" ref="previewHost" class="preview csv-preview" aria-label="CSV 表格预览" @scroll="onPreviewScroll" @click="onPreviewClick"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead><tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end"><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(1)" :key="rowIndex" :data-source-start="csvRowLines[rowIndex + 1]?.start" :data-source-end="csvRowLines[rowIndex + 1]?.end"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section>
+        <section v-if="mode !== 'source' && !large && isCsv" ref="previewHost" class="preview csv-preview" :style="mode === 'live' ? { borderLeft: 'none' } : undefined" aria-label="CSV 表格预览" @scroll="onPreviewScroll" @click="onPreviewClick"><p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p><div v-if="csvRows.length" class="csv-table-wrap"><table><thead><tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end"><th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in csvRows.slice(1)" :key="rowIndex" :data-source-start="csvRowLines[rowIndex + 1]?.start" :data-source-end="csvRowLines[rowIndex + 1]?.end"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table></div><p v-else class="csv-empty">表格为空</p></section>
       </div>
       <footer><button v-if="isMarkdown && !large" class="outline-toggle" :style="{ width: `${gutterWidth}px` }" :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'" :aria-expanded="!outlineCollapsed" @click="outlineCollapsed = !outlineCollapsed"><ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" /></button><span>{{ position }}</span><span>{{ count.toLocaleString() }} 字符</span><select aria-label="保存编码" :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></footer>
     </main>
