@@ -19,5 +19,6 @@
 - 使用 pnpm，只有 `pnpm-lock.yaml` 一种前端锁文件；Rust 保留 Cargo.lock。
 - 前端改动运行 `pnpm test`、`pnpm build`；文件层改动运行 `cargo test --manifest-path src-tauri/Cargo.toml --lib --locked`。
 - Windows 构建使用 `scripts/build.ps1` 载入 MSVC；依赖变化后运行 `scripts/collect-licenses.ps1`。
+- 每次调整并提交本仓库代码后，以该提交运行 `scripts/build.ps1` 生成 NSIS 安装包，完成当前用户安装并启动安装版核对；构建或安装失败时明确报告，不能把浏览器预览当作安装结果。
 - 桌面能力与安装包变化需实际启动安装版验证，浏览器结果不能代替原生对话框、文件保存与恢复。
 - 测试文件放 `output/smoke/`；该目录、构建目录和 node_modules 不提交。不得用用户真实文档做破坏性测试。
