@@ -24,6 +24,7 @@ footer .outline-toggle:hover{color:var(--accent)}
 .app{--bg:#f3f2ee;--panel:#eae8e2;--text:#1f0909;--muted:#696662;--border:#d8d5ce;--accent:#365d70;--hover:#e3e0d8;--selected:#d9e1e1;--code-bg:#e7e5df;--heading:#2c2422;--quote:#68625d;--selection:#7999aa55;color-scheme:light}
 .app.dark{--bg:#363b40;--panel:#2e3033;--text:#b8bfc6;--muted:#a4abb1;--border:#515962;--accent:#6dc1e7;--hover:#454c53;--selected:#435767;--code-bg:#303438;--heading:#dedede;--quote:#a6adb4;--selection:#4a89dc77;color-scheme:dark}
 .cm-activeLine{background:var(--selected)!important}
+.cm-editor:has(.cm-selectionBackground) .cm-activeLine{background:transparent!important}
 .cm-selectionBackground{background:var(--selection)!important}
 .live-heading{color:var(--heading)!important}
 .preview{font-family:Georgia,"Songti SC","SimSun",serif;color:var(--text);line-height:1.7}

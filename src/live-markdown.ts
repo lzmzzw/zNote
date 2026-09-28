@@ -1,4 +1,4 @@
-import { StateField, type EditorState, type Extension } from '@codemirror/state';
+import { EditorSelection, StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
 import { hydrateDiagrams } from './diagram';
 import { markdownBlocks, type MarkdownBlock } from './preview';
@@ -32,7 +32,6 @@ class MarkdownBlockWidget extends WidgetType {
       view.dispatch({ selection: { anchor }, scrollIntoView: true });
       view.focus();
     };
-    element.addEventListener('mousedown', event => { if (event.button !== 0) return; event.preventDefault(); edit(event.target); });
     element.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); }
     });
@@ -40,17 +39,18 @@ class MarkdownBlockWidget extends WidgetType {
     return element;
   }
 
-  ignoreEvent() { return true; }
+  ignoreEvent(event: Event) { return event.type !== 'mousedown' || (event as MouseEvent).button !== 0; }
 }
 
 interface LiveBlocks { blocks: MarkdownBlock[]; decorations: DecorationSet }
+const revealBlock = StateEffect.define<number>();
 
-function decorate(state: EditorState, blocks: MarkdownBlock[], dark: boolean): DecorationSet {
+function decorate(state: EditorState, blocks: MarkdownBlock[], dark: boolean, revealedLine?: number): DecorationSet {
   const startLine = state.doc.lineAt(state.selection.main.from).number;
   const endLine = state.doc.lineAt(state.selection.main.to).number;
   const ranges = [];
   for (const block of blocks) {
-    if (block.endLine >= startLine && block.startLine <= endLine) {
+    if (block.endLine >= startLine && block.startLine <= endLine || block.startLine === revealedLine) {
       const heading = /^<h([1-6])\b/.exec(block.html);
       if (heading) ranges.push(Decoration.line({ class: `live-heading live-h${heading[1]}` }).range(state.doc.line(block.startLine).from));
       continue;
@@ -69,11 +69,40 @@ export function liveMarkdownBlocks(dark: boolean): Extension {
       return { blocks, decorations: decorate(state, blocks, dark) };
     },
     update(value, transaction) {
-      if (!transaction.docChanged && !transaction.selection) return value;
+      const revealedLine = transaction.effects.find(effect => effect.is(revealBlock))?.value;
+      if (!transaction.docChanged && !transaction.selection && revealedLine === undefined) return value;
       const blocks = transaction.docChanged ? markdownBlocks(transaction.state.doc.toString()) : value.blocks;
-      return { blocks, decorations: decorate(transaction.state, blocks, dark) };
+      return { blocks, decorations: decorate(transaction.state, blocks, dark, revealedLine) };
     },
     provide: field => EditorView.decorations.from(field, value => value.decorations),
   });
-  return field;
+  return [field, EditorView.mouseSelectionStyle.of((view, event) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return null;
+    const block = event.target.closest<HTMLElement>('.live-rendered');
+    if (!block) return null;
+    const source = event.target.closest<HTMLElement>('[data-source-start]') ?? block;
+    const bounds = source.getBoundingClientRect();
+    let from = view.state.doc.line(Number(source.dataset.sourceStart ?? block.dataset.blockStart)).from;
+    let original = view.state.selection;
+    // Keep pointer coordinates relative to the clicked text while rendering changes the block layout.
+    view.dispatch({ effects: revealBlock.of(Number(block.dataset.blockStart)) });
+    if (event.detail > 1) return null;
+    const position = (pointer: MouseEvent) => {
+      const line = view.coordsAtPos(from);
+      return line ? view.posAtCoords({ x: pointer.clientX + line.left - bounds.left, y: pointer.clientY + line.top - bounds.top }) ?? from : from;
+    };
+    let anchor = position(event);
+    return {
+      get(pointer, extend, multiple) {
+        const head = position(pointer);
+        const range = extend ? original.main.extend(head) : EditorSelection.range(anchor, head);
+        return multiple ? original.addRange(range) : EditorSelection.create([range]);
+      },
+      update(update) {
+        from = update.changes.mapPos(from);
+        anchor = update.changes.mapPos(anchor);
+        original = original.map(update.changes);
+      },
+    };
+  })];
 }
