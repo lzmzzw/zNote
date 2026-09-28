@@ -14,7 +14,7 @@ import { tags } from '@lezer/highlight';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { FilePlus2, FolderOpen, Save, Download, Search, FileText, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, ArrowUp, ArrowDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
+import { FilePlus2, FolderOpen, Save, Download, Search, FileText, FileCode2, FileJson2, FileSpreadsheet, X, Plus, Code2, Columns2, Eye, Braces, ChevronRight, ChevronLeft, ChevronDown, ArrowUp, ArrowDown, Minus, Square, Copy, Scissors, ClipboardPaste, Settings, RefreshCw } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings, editableCodeFence } from './preview';
 import { canFormatCode } from './code-format';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
@@ -22,6 +22,7 @@ import { parseCsv } from './csv';
 import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
 import { liveMarkdownBlocks } from './live-markdown';
 import { hydrateDiagrams } from './diagram';
+import { conversionMenuState, needsSave } from './note-file';
 
 interface NativeDocument { path: string | null; text: string; encoding: string; bom: boolean; lineEnding: string; revision: string | null }
 type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
@@ -32,6 +33,7 @@ interface Note extends NativeDocument { id: number; name: string; format: NoteFo
 const welcome = '# 好想法，值得留下。\n\n欢迎来到 **zNote**，你的轻量文本与 Markdown 工作空间。\n\n## 从这里开始\n\n安静地写作，清晰地思考。打开一份文档，或从一张白纸出发。\n\n- 用 **Ctrl + N** 新建笔记\n- 用 **Ctrl + O** 打开本地文件\n- 用 **Ctrl + S** 保存你的想法\n- 用 **Ctrl + F** 查找与替换\n\n## 专注于内容\n\n在「源码」「原位」「分屏」之间切换，用你喜欢的方式组织文字。原位模式排版未编辑的 Markdown 块，点击后直接修改源码。\n\n> 写作是把思考变得可见。\n\n### 一点小工具\n\n支持 JSON / JSONC 格式化，保留注释；每次格式化都能撤销。\n\n```json\n{ "idea": "从一个小想法开始", "version": 1 }\n```\n\n---\n\n所有文件都留在本机。没有账号，没有云同步。\n';
 const notes = shallowRef<Note[]>([]); const activeId = ref(0); let nextId = 1;
 const active = computed(() => notes.value.find(n => n.id === activeId.value));
+const conversionMenu = computed(() => conversionMenuState(active.value?.path ?? null));
 const host = ref<HTMLElement>(); let view: EditorView | undefined;
 const mode = ref<DisplayMode>('live'); const dark = ref(false);
 const codeColors = (night: boolean) => HighlightStyle.define([
@@ -241,11 +243,12 @@ async function exportFormat(format: 'docx' | 'pdf') {
   } catch (error) { status.value = `导出失败：${error}`; }
   finally { busy.value = false; }
 }
-function requestClose(note: Note) { if (note.dirty) closePrompt.value = { kind: 'tab', note }; else removeNote(note); }
+function requestClose(note: Note) { if (needsSave(note.path, note.dirty, note.requiresSaveAs)) closePrompt.value = { kind: 'tab', note }; else removeNote(note); }
+function onTabAuxClick(event: MouseEvent, note: Note) { if (event.button === 1) { event.preventDefault(); requestClose(note); } }
 function removeNote(note: Note) { notes.value = notes.value.filter(n => n.id !== note.id); const { [note.id]: _removed, ...remaining } = collapsedHeadings.value; collapsedHeadings.value = remaining; if (!notes.value.length) createNote(); else if (activeId.value === note.id) selectNote(notes.value[0]); scheduleRecovery(); }
 async function resolveClose(action: 'save' | 'discard' | 'cancel') {
   const prompt = closePrompt.value; if (!prompt || busy.value) return; if (action === 'cancel') { closePrompt.value = null; return; }
-  if (action === 'save') { for (const note of prompt.kind === 'window' ? notes.value.filter(n => n.dirty) : [prompt.note!]) if (!(await saveNote(note))) return; }
+  if (action === 'save') { for (const note of prompt.kind === 'window' ? notes.value.filter(n => needsSave(n.path, n.dirty, n.requiresSaveAs)) : [prompt.note!]) if (!(await saveNote(note))) return; }
   if (prompt.kind === 'tab' && action === 'discard' && native) { busy.value = true; const persisted = await persistRecovery(prompt.note?.id); busy.value = false; if (!persisted) return; }
   closePrompt.value = null;
   if (prompt.kind === 'tab') removeNote(prompt.note!); else { try { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } catch (e) { status.value = String(e); } }
@@ -266,8 +269,13 @@ function formatCodeFence() {
 }
 function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   const note = active.value; menu.value = null; if (!note) return;
+  if (conversionMenuState(note.path) !== 'enabled') return;
+  if (note.format === format && note.path === null) return;
+  const wasLocalTxt = note.path !== null;
   note.format = format;
-  if (!note.path) note.name = note.name.replace(/\.[^.]+$/, '') + ({ markdown: '.md', json: '.json', csv: '.csv' }[format]);
+  note.name = note.name.replace(/\.[^.]+$/, '') + ({ markdown: '.md', json: '.json', csv: '.csv' }[format]);
+  if (wasLocalTxt) { note.path = null; note.revision = null; note.requiresSaveAs = false; }
+  note.version++; note.metaDirty = true; note.dirty = true;
   changeMode(defaultMode(format));
   touch(); reconfigure(); refreshDerived(); scheduleRecovery(); status.value = `已切换为 ${format === 'markdown' ? 'Markdown' : format.toUpperCase()}`;
   if (format === 'json' && note.state.doc.length && !/\.jsonc$/i.test(note.name)) formatJson();
@@ -363,7 +371,7 @@ function scheduleRecovery() { if (!native) return; clearTimeout(recoveryTimer); 
 function shortcuts(e: KeyboardEvent) { if (e.key === 'Escape') { menu.value = null; if (settingsOpen.value) settingsOpen.value = false; } if (closePrompt.value) { if (e.key === 'Escape') { e.preventDefault(); void resolveClose('cancel'); } if (e.key === 'Tab') { const buttons = [...(modalElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]; const first = buttons[0]; const last = buttons[buttons.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } if (e.ctrlKey || e.metaKey) e.preventDefault(); return; } if (settingsOpen.value || !(e.ctrlKey || e.metaKey)) return; const k = e.key.toLowerCase(); if (k === 'f' || k === 'h') { e.preventDefault(); searchPanel(k === 'h'); return; } if (['n', 'o', 's', 'w'].includes(k)) { e.preventDefault(); if (busy.value) return; if (k === 'n') newNote(); if (k === 'o') void openFile(); if (k === 's') void saveNote(active.value, e.shiftKey); if (k === 'w' && active.value) requestClose(active.value); } }
 function setEncoding(value: string) { if (active.value) { active.value.encoding = value; active.value.bom = value.startsWith('UTF-16'); active.value.dirty = true; active.value.metaDirty = true; active.value.version++; touch(); scheduleRecovery(); status.value = `保存时使用 ${value}`; } }
 function setLineEnding(value: string) { if (active.value) { active.value.lineEnding = value; active.value.dirty = true; active.value.metaDirty = true; active.value.version++; touch(); scheduleRecovery(); status.value = `保存时统一换行为 ${value}`; } }
-function beforeUnload(e: BeforeUnloadEvent) { if (notes.value.some(n => n.dirty)) { e.preventDefault(); e.returnValue = ''; } }
+function beforeUnload(e: BeforeUnloadEvent) { if (notes.value.some(n => needsSave(n.path, n.dirty, n.requiresSaveAs))) { e.preventDefault(); e.returnValue = ''; } }
 onMounted(async () => {
   dark.value = localStorage.getItem('znote-theme') === 'dark'; createNote({ path: null, text: welcome, encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null }, '欢迎使用.md');
   view = new EditorView({ state: active.value!.state, parent: host.value }); view.scrollDOM.addEventListener('scroll', onSourceScroll); refreshDerived();
@@ -371,7 +379,7 @@ onMounted(async () => {
   if (gutters) { gutterObserver = new ResizeObserver(() => { gutterWidth.value = gutters.getBoundingClientRect().width; }); gutterObserver.observe(gutters); gutterWidth.value = gutters.getBoundingClientRect().width; }
   worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' }); worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => { const pending = pendingFormat; if (!pending || data.id !== pending.id) return; pendingFormat = undefined; if (pending.note.version !== pending.version || pending.note.format !== pending.format || !notes.value.includes(pending.note)) { status.value = '内容已变化，已忽略过期格式化结果'; return; } if (data.error) { status.value = data.error; return; } const changes = { from: pending.from, to: pending.to, insert: data.text! }; if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' }); else { pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state; pending.note.version++; pending.note.dirty = true; touch(); scheduleRecovery(); } status.value = '已格式化 · Ctrl + Z 可撤销'; };
   window.addEventListener('keydown', shortcuts); window.addEventListener('beforeunload', beforeUnload);
-  if (native) { unlisten = await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); if (notes.value.some(n => n.dirty)) closePrompt.value = { kind: 'window' }; else { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } });
+  if (native) { unlisten = await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); if (notes.value.some(n => needsSave(n.path, n.dirty, n.requiresSaveAs))) closePrompt.value = { kind: 'window' }; else { clearTimeout(recoveryTimer); await recoveryWrite; await invoke('recovery_save', { data: null }); await getCurrentWindow().destroy(); } });
     unlistenAssociated = await listen('associated-file-open', () => { void openAssociatedFiles(); });
     try { const recovered = await invoke<(NativeDocument & { name: string; format?: NoteFormat })[] | null>('recovery_load'); if (Array.isArray(recovered) && recovered.length) { for (const doc of recovered) if (doc && typeof doc.text === 'string' && typeof doc.name === 'string' && (doc.path === null || typeof doc.path === 'string') && (doc.revision === null || typeof doc.revision === 'string') && typeof doc.bom === 'boolean' && ['UTF-8', 'GBK', 'UTF-16LE', 'UTF-16BE'].includes(doc.encoding) && ['LF', 'CRLF', 'CR', 'Mixed'].includes(doc.lineEnding)) { const note = createNote({ ...doc, path: null, revision: null }, doc.name); if (['txt', 'markdown', 'json', 'csv'].includes(doc.format ?? '')) note.format = doc.format!; note.saved = ''; note.dirty = true; note.metaDirty = true; changeMode(defaultMode(note.format)); } touch(); status.value = `已恢复 ${recovered.length} 份未保存草稿`; } } catch (e) { status.value = `恢复草稿读取失败：${e}`; }
     await openAssociatedFiles();
@@ -392,7 +400,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
           <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button><hr /><button @click="searchPanel()"><Search :size="15" />查找与替换 <kbd>Ctrl+F</kbd></button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button><div v-if="menu === 'format'" class="menu-popup">
-          <button :class="{ checked: active?.format === 'markdown' }" @click="changeFormat('markdown')">Markdown</button><button :class="{ checked: active?.format === 'json' }" @click="changeFormat('json')">JSON</button><button :class="{ checked: active?.format === 'csv' }" @click="changeFormat('csv')">CSV</button><hr /><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button><button :disabled="active?.format !== 'markdown' || busy || large" @click="formatCodeFence()"><Code2 :size="15" />格式化代码块</button>
+          <template v-if="conversionMenu !== 'hidden'"><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('markdown')">转为 Markdown</button><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('csv')">转为 CSV</button><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('json')">转为 JSON</button><hr /></template><button :disabled="active?.format !== 'json' || busy" @click="menu = null; formatJson()"><Braces :size="15" />格式化 JSON</button><button :disabled="active?.format !== 'markdown' || busy || large" @click="formatCodeFence()"><Code2 :size="15" />格式化代码块</button>
         </div></div>
         <div class="menu-group"><button :aria-expanded="menu === 'help'" @click="toggleMenu('help')">帮助</button><div v-if="menu === 'help'" class="menu-popup">
           <button @click="menu = null; settingsOpen = true"><Settings :size="15" />设置</button><button @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
@@ -415,7 +423,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
     </aside>
     <main>
       <div class="tabs">
-        <div class="tab-list" role="tablist"><div v-for="note in notes" :key="note.id" class="tab" :class="{ active: note.id === activeId }"><button role="tab" :aria-selected="note.id === activeId" @click="selectNote(note)"><FileText :size="14" />{{ note.name }}<span v-if="note.dirty" class="dirty-dot">●</span></button><button class="close-tab" :aria-label="`关闭 ${note.name}`" @click="requestClose(note)"><X :size="13" /></button></div><button class="add-tab" title="新建笔记" @click="newNote"><Plus :size="16" /></button></div>
+        <div class="tab-list" role="tablist"><div v-for="note in notes" :key="note.id" class="tab" :class="{ active: note.id === activeId }" @mousedown.middle.prevent @auxclick="onTabAuxClick($event, note)"><button role="tab" :aria-selected="note.id === activeId" :aria-label="`${note.name}，${needsSave(note.path, note.dirty, note.requiresSaveAs) ? '未保存' : '已保存'}`" :title="note.name" @click="selectNote(note)"><FileCode2 v-if="note.format === 'markdown'" class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><FileJson2 v-else-if="note.format === 'json'" class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><FileSpreadsheet v-else-if="note.format === 'csv'" class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><FileText v-else class="file-icon" :class="{ unsaved: needsSave(note.path, note.dirty, note.requiresSaveAs) }" :size="15" aria-hidden="true" /><span class="tab-name">{{ note.name }}</span></button><button class="close-tab" :aria-label="`关闭 ${note.name}`" @click="requestClose(note)"><X :size="13" /></button></div><button class="add-tab" title="新建笔记" @click="newNote"><Plus :size="16" /></button></div>
         <div class="mode-switch" role="group" aria-label="编辑模式"><button aria-label="源码" title="源码" :aria-pressed="mode === 'source'" :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="16" /></button><button aria-label="原位" title="原位" :aria-pressed="mode === 'live'" :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="16" /></button><button aria-label="分屏" title="分屏" :aria-pressed="mode === 'split'" :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="16" /></button></div>
       </div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；超过 200 万字符不写恢复草稿，请及时保存。</div>
@@ -432,6 +440,6 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
     </div>
     <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
     <div v-if="settingsOpen" class="modal-backdrop" @click.self="settingsOpen = false"><section ref="settingsElement" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" @keydown="trapSettings"><header><h2>设置</h2><button aria-label="关闭设置" @click="settingsOpen = false"><X :size="18" /></button></header><div class="theme-setting"><span>外观</span><div class="theme-options" role="group" aria-label="外观主题"><button :aria-pressed="!dark" @click="setTheme(false)">Newsprint</button><button :aria-pressed="dark" @click="setTheme(true)">Night</button></div></div><label>保存编码 <select :value="active?.encoding" @change="setEncoding(($event.target as HTMLSelectElement).value)"><option>UTF-8</option><option>GBK</option><option>UTF-16LE</option><option>UTF-16BE</option></select></label><label>换行格式 <select :value="active?.lineEnding" @change="setLineEnding(($event.target as HTMLSelectElement).value)"><option v-if="active?.lineEnding === 'Mixed'" disabled>Mixed</option><option>LF</option><option>CRLF</option><option>CR</option></select></label></section></div>
-    <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存尚未完成的想法？</h2><p>{{ closePrompt.kind === 'window' ? '有文档尚未保存。关闭之前，可以将它们保存到本机。' : `“${closePrompt.note?.name}”的修改尚未保存。` }}</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
+    <div v-if="closePrompt" class="modal-backdrop"><section ref="modalElement" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title"><h2 id="close-title">保存尚未完成的想法？</h2><p>{{ closePrompt.kind === 'window' ? '有文档尚未保存。关闭之前，可以将它们保存到本机。' : `“${closePrompt.note?.name}”尚未保存。` }}</p><div><button :disabled="busy" @click="resolveClose('cancel')">取消</button><button :disabled="busy" @click="resolveClose('discard')">不保存</button><button class="primary" :disabled="busy" @click="resolveClose('save')">{{ busy ? '保存中…' : '保存并关闭' }}</button></div></section></div>
   </div>
 </template>

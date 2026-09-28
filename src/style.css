@@ -92,3 +92,9 @@ footer .outline-toggle:hover{color:var(--accent)}
 .cm-editor .cm-searchMatch-selected{background:#9cca8a}
 .app.dark .cm-editor .cm-searchMatch{background:#53693b}
 .app.dark .cm-editor .cm-searchMatch-selected{background:#788e54}
+.tab>button:first-child{min-width:0;gap:8px}
+.tab .tab-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tab .file-icon{flex:none}
+.tab .file-icon.unsaved{color:#c24543}
+.app.dark .tab .file-icon.unsaved{color:#eb7771}
+.menu-popup button:disabled{cursor:not-allowed}

@@ -4,8 +4,8 @@
 
 ## 首版功能
 
-- 多标签、独立撤销历史、行号、自动换行、搜索替换。顶部菜单提供文件、编辑、格式和帮助操作；帮助中的设置可调整主题及当前文档的保存编码、换行格式。
-- 新建标签默认为 `.txt`；打开本地文档按 `.md` / `.markdown`、`.json` / `.jsonc` / `.geojson`、`.csv` 后缀识别格式。Markdown、CSV 默认原位显示，JSON（含 JSONC、GeoJSON）默认分屏，其他类型默认源码显示。格式菜单切换后使用对应默认模式；未保存标签会同步更改建议文件名。JSON 切换后对非空内容执行可撤销的格式化。手动选择的显示模式在当前标签内保留，切换标签不会沿用其他文档的模式。
+- 多标签、独立撤销历史、行号、自动换行、搜索替换。标签按文本、Markdown、JSON（含 GeoJSON）和 CSV 显示对应图标；未保存文档的图标为红色。鼠标中键可关闭标签，未保存时先提示。顶部菜单提供文件、编辑、格式和帮助操作；帮助中的设置可调整主题及当前文档的保存编码、换行格式。
+- 新建标签默认为 `.txt`；打开本地文档按 `.md` / `.markdown`、`.json` / `.jsonc` / `.geojson`、`.csv` 后缀识别格式。Markdown、CSV 默认原位显示，JSON（含 JSONC、GeoJSON）默认分屏，其他类型默认源码显示。格式菜单中的“转为 Markdown / CSV / JSON”仅对新建文档和本地 `.txt` 文件可用；已保存的 Markdown、JSON/GeoJSON、CSV 文件显示为禁用，其他后缀不显示。转换本地 `.txt` 时保留原文件，后续保存以新后缀另存为。转为 JSON 后对非空内容执行可撤销的格式化。手动选择的显示模式在当前标签内保留，切换标签不会沿用其他文档的模式。
 - Windows 安装版注册 `.txt`、`.md`、`.markdown`、`.json`、`.jsonc`、`.geojson`、`.csv`、`.log`、`.yaml`、`.yml`、`.toml`、`.xml`、`.html`、`.css`、`.js`、`.ts`、`.rs`、`.sql` 为可用 zNote 打开的文本格式；`.geojson` 按 JSON 显示，`.sql` 按普通文本显示。是否设为默认应用由 Windows 和用户决定。资源管理器打开文件会交给现有 zNote 窗口，或启动新窗口；关联打开的文件首次保存需通过原生保存对话框确认路径。
 - Markdown 源码、原位、分屏预览；原位与分屏共用 CommonMark/GFM 解析，排版标题、强调、列表与任务框、链接、引用、表格、代码块、分隔线、脚注及行内/块级公式。原位点击排版块会显示该块的 Markdown 原文供编辑，离开后重新排版。`mermaid` 与 Mermaid 风格的 `flowchart` 围栏显示 Mermaid 图；`flow` 与 flowchart.js 风格的 `flowchart` 围栏显示 flowchart.js 图。分屏预览按语言高亮普通代码块。编辑器自动补全括号与引号；格式菜单可格式化光标所在的 JavaScript、TypeScript、JSON、JSONC、CSS 或 HTML 代码围栏，支持撤销。
 - Markdown、JSON 和 CSV 分屏时，两侧按内容锚点同步纵向滚动；点击源码或右侧预览会高亮并定位对应内容。JSON 右侧为只读结构视图，按解析节点对应源码字符位置，不要求两侧显示行号相同。
