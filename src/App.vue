@@ -1362,8 +1362,9 @@ onBeforeUnmount(() => {
               "
             >
               <Settings :size="15" />设置</button
-            ><button :disabled="checkingUpdate" @click="checkUpdates"><RefreshCw :size="15" />检查更新</button>
-            <div class="menu-version">当前版本 v{{ appVersion }}</div>
+            ><button :disabled="checkingUpdate" @click="checkUpdates"
+              ><RefreshCw :size="15" />检查更新<span class="menu-version">v{{ appVersion }}</span></button
+            >
           </div>
         </div>
       </nav>

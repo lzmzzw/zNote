@@ -56,8 +56,10 @@ describe('software updates', () => {
     await mount();
     root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click();
     await nextTick();
-    expect(root.textContent).toContain('当前版本 v0.1.1');
-    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('检查更新'))!.click();
+    const updateButton = [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('检查更新'))!;
+    expect(updateButton.textContent).toContain('v0.1.1');
+    expect(root.textContent).not.toContain('当前版本');
+    updateButton.click();
     await new Promise(resolve => setTimeout(resolve, 30));
     expect(updater.check).toHaveBeenCalled();
     expect(updater.downloadAndInstall).toHaveBeenCalled();

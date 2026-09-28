@@ -31,10 +31,10 @@
   font-size: 10px;
 }
 .menu-version {
-  border-top: 1px solid var(--border);
-  padding: 9px 12px;
+  margin-left: auto;
   color: var(--muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 .menu-popup button.checked {
   color: var(--accent);
