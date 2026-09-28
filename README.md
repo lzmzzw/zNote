@@ -83,6 +83,7 @@ pwsh -NoProfile -File scripts/build.ps1
 
 - [首版设计](docs/design.md)
 - [前端模块与样式维护](docs/frontend.md)
+- [后端模块、文件边界与性能验证](docs/backend.md)
 - [开源技术参考](docs/open-source.md)
 - [验证记录](docs/verification.md)
 - `scripts/create-smoke-fixtures.ps1` 生成中文 Markdown、JSON 大整数、GBK/UTF-16 和长文验收文件，仅写入忽略的 `output/smoke/`。

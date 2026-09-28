@@ -2,6 +2,7 @@ use encoding_rs::GBK;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    borrow::Cow,
     fs,
     io::{Read, Write},
     path::Path,
@@ -39,17 +40,16 @@ pub fn decode(bytes: &[u8]) -> Result<(String, String, bool), String> {
             if data.len() % 2 != 0 {
                 return Err("UTF-16 文件长度无效".into());
             }
-            let units: Vec<u16> = data
-                .chunks_exact(2)
-                .map(|b| {
-                    if encoding == "UTF-16LE" {
-                        u16::from_le_bytes([b[0], b[1]])
-                    } else {
-                        u16::from_be_bytes([b[0], b[1]])
-                    }
-                })
-                .collect();
-            String::from_utf16(&units).map_err(|_| "UTF-16 包含无效字符")?
+            let units = data.chunks_exact(2).map(|b| {
+                if encoding == "UTF-16LE" {
+                    u16::from_le_bytes([b[0], b[1]])
+                } else {
+                    u16::from_be_bytes([b[0], b[1]])
+                }
+            });
+            char::decode_utf16(units)
+                .collect::<Result<String, _>>()
+                .map_err(|_| "UTF-16 包含无效字符")?
         }
         _ => match std::str::from_utf8(data) {
             Ok(s) => s.to_owned(),
@@ -73,27 +73,24 @@ pub fn decode(bytes: &[u8]) -> Result<(String, String, bool), String> {
     Ok((text, actual.into(), bom))
 }
 pub fn encode(text: &str, encoding: &str, bom: bool, eol: &str) -> Result<Vec<u8>, String> {
+    if text.contains('\0') {
+        return Err("保存内容包含 NUL 字符，无法作为文本重新打开".into());
+    }
     if encoding.starts_with("UTF-16") && !bom {
         return Err("UTF-16 保存必须包含 BOM，以保证下次准确识别编码".into());
     }
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let output = match eol {
-        "CRLF" => normalized.replace('\n', "\r\n"),
-        "CR" => normalized.replace('\n', "\r"),
-        "LF" => normalized,
-        "Mixed" => text.to_owned(),
-        _ => return Err("未知换行格式".into()),
-    };
-    let mut bytes = Vec::new();
-    match encoding {
+    let output = normalize_line_endings(text, eol)?;
+    let bytes = match encoding {
         "UTF-8" => {
+            let mut bytes = output.into_owned().into_bytes();
             if bom {
-                bytes.extend([0xef, 0xbb, 0xbf]);
+                bytes.splice(..0, [0xef, 0xbb, 0xbf]);
             }
-            bytes.extend(output.as_bytes());
+            bytes
         }
         "UTF-16LE" | "UTF-16BE" => {
             let le = encoding == "UTF-16LE";
+            let mut bytes = Vec::with_capacity(output.len().saturating_add(2));
             if bom {
                 bytes.extend(if le { [0xff, 0xfe] } else { [0xfe, 0xff] });
             }
@@ -104,6 +101,7 @@ pub fn encode(text: &str, encoding: &str, bom: bool, eol: &str) -> Result<Vec<u8
                     ch.to_be_bytes()
                 });
             }
+            bytes
         }
         "GBK" => {
             if bom {
@@ -113,28 +111,75 @@ pub fn encode(text: &str, encoding: &str, bom: bool, eol: &str) -> Result<Vec<u8
             if errors {
                 return Err("当前文字无法用 GBK 无损保存，请选择 UTF-8".into());
             }
-            bytes.extend(data.as_ref());
+            data.into_owned()
         }
         _ => return Err("不支持的编码".into()),
-    }
+    };
     if bytes.len() as u64 > MAX_BYTES {
         return Err("保存内容超过 20 MB 限制".into());
     }
     Ok(bytes)
 }
+fn normalize_line_endings<'a>(text: &'a str, eol: &str) -> Result<Cow<'a, str>, String> {
+    let replacement = match eol {
+        "CRLF" => "\r\n",
+        "CR" => "\r",
+        "LF" => "\n",
+        "Mixed" => return Ok(Cow::Borrowed(text)),
+        _ => return Err("未知换行格式".into()),
+    };
+    let mut output: Option<String> = None;
+    let mut start = 0;
+    let mut index = 0;
+    let bytes = text.as_bytes();
+    while index < bytes.len() {
+        if bytes[index] != b'\r' && bytes[index] != b'\n' {
+            index += 1;
+            continue;
+        }
+        let end = index
+            + if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+        if &text[index..end] != replacement {
+            let buffer = output.get_or_insert_with(|| String::with_capacity(text.len()));
+            buffer.push_str(&text[start..index]);
+            buffer.push_str(replacement);
+            start = end;
+        }
+        index = end;
+    }
+    Ok(match output {
+        Some(mut buffer) => {
+            buffer.push_str(&text[start..]);
+            Cow::Owned(buffer)
+        }
+        None => Cow::Borrowed(text),
+    })
+}
 pub fn line_ending(text: &str) -> String {
-    let crlf = text.matches("\r\n").count();
-    let rest = text.replace("\r\n", "");
-    let lf = rest.contains('\n');
-    let cr = rest.contains('\r');
-    if (crlf > 0) as u8 + lf as u8 + cr as u8 > 1 {
-        "Mixed"
-    } else if crlf > 0 {
-        "CRLF"
-    } else if cr {
-        "CR"
-    } else {
-        "LF"
+    let mut kinds: u8 = 0;
+    let mut bytes = text.bytes().peekable();
+    while let Some(byte) = bytes.next() {
+        kinds |= match byte {
+            b'\r' if bytes.peek() == Some(&b'\n') => {
+                bytes.next();
+                1
+            }
+            b'\r' => 2,
+            b'\n' => 4,
+            _ => 0,
+        };
+        if kinds.count_ones() > 1 {
+            return "Mixed".into();
+        }
+    }
+    match kinds {
+        1 => "CRLF",
+        2 => "CR",
+        _ => "LF",
     }
     .into()
 }
@@ -172,16 +217,32 @@ pub fn guarded_write(path: &Path, bytes: &[u8], expected: Option<&str>) -> Resul
     write_impl(path, bytes, Some(expected))
 }
 pub fn disk_revision(path: &Path) -> Result<Option<String>, String> {
-    match fs::metadata(path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.to_string()),
-        Ok(meta) => {
-            if meta.len() > MAX_BYTES {
-                return Err("目标文件超过 20 MB 限制".into());
-            }
-            Ok(Some(revision(&read_bytes(path)?)))
-        }
+    let mut file = match fs::File::open(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+        Ok(file) => file,
+    };
+    if file.metadata().map_err(|e| e.to_string())?.len() > MAX_BYTES {
+        return Err("目标文件超过 20 MB 限制".into());
     }
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        let count = match file.read(&mut buffer) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result.map_err(|e| e.to_string())?,
+        };
+        if count == 0 {
+            break;
+        }
+        total += count as u64;
+        if total > MAX_BYTES {
+            return Err("目标文件超过 20 MB 限制".into());
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(Some(format!("{:x}", hasher.finalize())))
 }
 fn write_impl(path: &Path, bytes: &[u8], expected: Option<Option<&str>>) -> Result<(), String> {
     let parent = path.parent().ok_or("无效保存路径")?;
@@ -214,6 +275,11 @@ fn write_impl(path: &Path, bytes: &[u8], expected: Option<Option<&str>>) -> Resu
         }
         return Ok(());
     }
+    #[cfg(not(windows))]
+    if expected != Some(None) {
+        temp.persist(path).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     temp.persist_noclobber(path).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -237,6 +303,137 @@ mod tests {
         assert!(encode("abc", "UTF-16LE", false, "LF").is_err());
         assert!(decode(&[0xff, 0xfe, 0x00, 0xd8]).is_err());
         assert!(decode(&[0xef, 0xbb, 0xbf, 0xff]).is_err());
+        for encoding in ["UTF-8", "GBK", "UTF-16LE", "UTF-16BE"] {
+            assert!(encode("a\0b", encoding, encoding != "GBK", "Mixed").is_err());
+        }
+    }
+    #[test]
+    fn normalizes_all_line_endings_without_changing_unicode() {
+        for text in [
+            "",
+            "你好😀",
+            "\r",
+            "\n",
+            "\r\n",
+            "你\r\n好\n😀\r尾",
+            "\r\r\n\n",
+        ] {
+            for eol in ["LF", "CR", "CRLF", "Mixed"] {
+                let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+                let expected = match eol {
+                    "LF" => normalized,
+                    "CR" => normalized.replace('\n', "\r"),
+                    "CRLF" => normalized.replace('\n', "\r\n"),
+                    _ => text.to_owned(),
+                };
+                for encoding in ["UTF-8", "UTF-16LE", "UTF-16BE"] {
+                    let bytes = encode(text, encoding, true, eol).unwrap();
+                    assert_eq!(decode(&bytes).unwrap().0, expected);
+                }
+            }
+        }
+        assert!(matches!(
+            normalize_line_endings("你好\r\n世界", "CRLF").unwrap(),
+            Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            normalize_line_endings("你好\n世界", "LF").unwrap(),
+            Cow::Borrowed(_)
+        ));
+        assert!(normalize_line_endings("", "invalid").is_err());
+    }
+    #[test]
+    fn detects_newline_combinations() {
+        for (text, expected) in [
+            ("", "LF"),
+            ("你好", "LF"),
+            ("\r", "CR"),
+            ("\n", "LF"),
+            ("\r\n", "CRLF"),
+            ("\r\r\n", "Mixed"),
+            ("\r\n\n", "Mixed"),
+            ("\r\n\r", "Mixed"),
+            ("\n\r", "Mixed"),
+        ] {
+            assert_eq!(line_ending(text), expected);
+        }
+    }
+    #[test]
+    fn streaming_revision_matches_memory_and_enforces_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("revision.txt");
+        assert_eq!(disk_revision(&path).unwrap(), None);
+        for length in [0, 65535, 65536, 65537, 150000] {
+            let bytes = vec![b'x'; length];
+            fs::write(&path, &bytes).unwrap();
+            assert_eq!(
+                disk_revision(&path).unwrap().as_deref(),
+                Some(revision(&bytes).as_str())
+            );
+        }
+        fs::File::create(&path)
+            .unwrap()
+            .set_len(MAX_BYTES + 1)
+            .unwrap();
+        assert!(disk_revision(&path).is_err());
+    }
+    #[test]
+    fn guarded_create_and_replace() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("guarded.txt");
+        guarded_write(&path, b"first", None).unwrap();
+        guarded_write(&path, b"second", Some(&revision(b"first"))).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert!(guarded_write(&path, b"conflict", None).is_err());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    #[ignore = "手动 release 性能基准：cargo test --release --lib document::tests::benchmark_large_document -- --ignored --nocapture"]
+    fn benchmark_large_document() {
+        use std::{hint::black_box, time::Instant};
+        let text = "标题 content 你好\r\n".repeat(500_000);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("benchmark.txt");
+        fs::write(&path, text.as_bytes()).unwrap();
+        for name in [
+            "line_ending_before",
+            "line_ending",
+            "encode_utf8_before",
+            "encode_utf8",
+            "disk_revision",
+        ] {
+            let start = Instant::now();
+            for _ in 0..10 {
+                match name {
+                    "line_ending_before" => {
+                        let source = black_box(&text);
+                        let crlf = source.matches("\r\n").count();
+                        let rest = source.replace("\r\n", "");
+                        black_box((crlf, rest.contains('\n'), rest.contains('\r')));
+                    }
+                    "line_ending" => {
+                        black_box(line_ending(black_box(&text)));
+                    }
+                    "encode_utf8_before" => {
+                        let normalized = black_box(&text).replace("\r\n", "\n").replace('\r', "\n");
+                        let output = normalized.replace('\n', "\r\n");
+                        black_box(output.as_bytes().to_vec());
+                    }
+                    "encode_utf8" => {
+                        black_box(encode(black_box(&text), "UTF-8", false, "CRLF").unwrap());
+                    }
+                    _ => {
+                        black_box(disk_revision(black_box(&path)).unwrap());
+                    }
+                }
+            }
+            eprintln!(
+                "{name}: {} bytes, 10 iterations, {:?}",
+                text.len(),
+                start.elapsed()
+            );
+        }
     }
     #[test]
     fn mixed_preserved() {
@@ -246,6 +443,7 @@ mod tests {
     }
     #[cfg(windows)]
     #[test]
+    #[allow(clippy::permissions_set_readonly_false)] // 仅 Windows 测试清理只读属性。
     fn preserves_stream_and_rejects_readonly() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("private.txt");

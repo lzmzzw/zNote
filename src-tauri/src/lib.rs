@@ -1,14 +1,28 @@
+mod commands;
 mod document;
+mod recovery;
+use commands::{native_export, native_open, native_save};
 use document::Document;
+use recovery::{recovery_load, recovery_save};
 use std::{
     collections::HashSet,
-    io::Read,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 use tauri::{Emitter, Manager, State};
 #[derive(Default)]
-struct Access(Mutex<HashSet<PathBuf>>);
+struct Access(Arc<Mutex<HashSet<PathBuf>>>);
+
+#[derive(Default)]
+struct Writes(Arc<Mutex<()>>);
+
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| format!("后台文件任务失败: {error}"))?
+}
 #[derive(Default)]
 struct OpenRequests(Mutex<Vec<PathBuf>>);
 const ASSOCIATED_EXTENSIONS: &[&str] = &[
@@ -56,238 +70,27 @@ struct OpenedDocuments {
 }
 
 #[tauri::command]
-fn native_take_open_requests(requests: State<'_, OpenRequests>) -> Result<OpenedDocuments, String> {
+async fn native_take_open_requests(
+    requests: State<'_, OpenRequests>,
+) -> Result<OpenedDocuments, String> {
     let paths = std::mem::take(&mut *requests.0.lock().map_err(|_| "待打开文件状态不可用")?);
-    let mut result = OpenedDocuments {
-        documents: Vec::new(),
-        errors: Vec::new(),
-    };
-    for path in paths {
-        match document::read(&path) {
-            Ok(doc) => result.documents.push(doc),
-            Err(error) => result.errors.push(format!(
-                "{}: {error}",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            )),
-        }
-    }
-    Ok(result)
-}
-#[tauri::command]
-async fn native_open(access: State<'_, Access>) -> Result<Option<Document>, String> {
-    let Some(file) = rfd::AsyncFileDialog::new()
-        .add_filter(
-            "文本 / Markdown",
-            &[
-                "md", "markdown", "txt", "json", "jsonc", "geojson", "yaml", "yml", "toml", "csv",
-                "log", "xml", "rs", "ts", "js", "html", "css", "sql",
-            ],
-        )
-        .add_filter("所有文件", &["*"])
-        .pick_file()
-        .await
-    else {
-        return Ok(None);
-    };
-    let path = file.path().to_path_buf();
-    let doc = document::read(&path)?;
-    access.0.lock().map_err(|_| "路径状态不可用")?.insert(path);
-    Ok(Some(doc))
-}
-#[tauri::command]
-async fn native_save(
-    access: State<'_, Access>,
-    path: Option<String>,
-    name: String,
-    text: String,
-    encoding: String,
-    bom: bool,
-    line_ending: String,
-    revision: Option<String>,
-    save_as: bool,
-) -> Result<Option<Document>, String> {
-    let bytes = document::encode(&text, &encoding, bom, &line_ending)?;
-    let old = path.map(PathBuf::from);
-    let selected = save_as || old.is_none();
-    let dest = if selected {
-        let extension = std::path::Path::new(&name)
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("txt");
-        let mut dialog = rfd::AsyncFileDialog::new();
-        dialog = match extension.to_ascii_lowercase().as_str() {
-            "md" | "markdown" => dialog.add_filter("Markdown", &["md", "markdown"]),
-            "json" | "jsonc" | "geojson" => {
-                dialog.add_filter("JSON", &["json", "jsonc", "geojson"])
-            }
-            "csv" => dialog.add_filter("CSV", &["csv"]),
-            "txt" => dialog.add_filter("文本", &["txt"]),
-            other
-                if !other.is_empty()
-                    && other.len() <= 12
-                    && other
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric()) =>
-            {
-                dialog.add_filter("当前格式", &[other])
-            }
-            _ => dialog.add_filter("文本", &["txt"]),
+    blocking(move || {
+        let mut result = OpenedDocuments {
+            documents: Vec::new(),
+            errors: Vec::new(),
         };
-        if let Some(p) = &old {
-            if let Some(n) = p.file_name() {
-                dialog = dialog.set_file_name(n.to_string_lossy());
-            }
-        } else {
-            dialog = dialog.set_file_name(name);
-        }
-        let Some(file) = dialog.save_file().await else {
-            return Ok(None);
-        };
-        file.path().to_path_buf()
-    } else {
-        old.clone().unwrap()
-    };
-    if !selected
-        && !access
-            .0
-            .lock()
-            .map_err(|_| "路径状态不可用")?
-            .contains(&dest)
-    {
-        return Err("请通过打开或另存为对话框选择文件".into());
-    }
-    let current = document::disk_revision(&dest)?;
-    if !selected || old.as_ref() == Some(&dest) {
-        if current.is_none() || revision != current {
-            return Err("文件已被外部修改或删除。请重新打开或另存为，避免覆盖外部修改。".into());
-        }
-    }
-    document::guarded_write(&dest, &bytes, current.as_deref())?;
-    access
-        .0
-        .lock()
-        .map_err(|_| "路径状态不可用")?
-        .insert(dest.clone());
-    Ok(Some(Document {
-        path: dest.to_string_lossy().into_owned(),
-        text,
-        encoding,
-        bom,
-        line_ending,
-        revision: document::revision(&bytes),
-    }))
-}
-#[tauri::command]
-async fn native_export(name: String, format: String, bytes: Vec<u8>) -> Result<bool, String> {
-    let (extension, label) = match format.as_str() {
-        "docx" => ("docx", "Word 文档"),
-        "pdf" => ("pdf", "PDF 文档"),
-        _ => return Err("不支持的导出格式".into()),
-    };
-    if bytes.is_empty() || bytes.len() > 40 * 1024 * 1024 {
-        return Err("导出文件为空或超过 40 MB 限制".into());
-    }
-    let stem = std::path::Path::new(&name)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .filter(|value| !value.is_empty())
-        .unwrap_or("未命名");
-    let Some(file) = rfd::AsyncFileDialog::new()
-        .add_filter(label, &[extension])
-        .set_file_name(format!("{stem}.{extension}"))
-        .save_file()
-        .await
-    else {
-        return Ok(false);
-    };
-    let path = file.path();
-    if path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case(extension))
-        != Some(true)
-    {
-        return Err("导出文件扩展名与所选格式不一致".into());
-    }
-    document::atomic_write(path, &bytes)?;
-    Ok(true)
-}
-fn recovery_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("recovery.json"))
-}
-const MAX_SESSION_BYTES: u64 = 256 * 1024 * 1024;
-fn read_recovery(path: &Path) -> Result<serde_json::Value, String> {
-    let mut bytes = Vec::new();
-    std::fs::File::open(path)
-        .map_err(|e| e.to_string())?
-        .take(MAX_SESSION_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_SESSION_BYTES {
-        return Err("会话超过 256 MiB 限制".into());
-    }
-    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
-}
-fn attach_approved_paths(data: &mut serde_json::Value, access: &Access) -> Result<(), String> {
-    if let Some(session) = data.as_object_mut() {
-        // 授权路径由原生层写入，前端不能通过会话参数自行授权路径。
-        let paths: Vec<String> = access
-            .0
-            .lock()
-            .map_err(|_| "路径状态不可用")?
-            .iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect();
-        session.insert("approvedPaths".into(), serde_json::json!(paths));
-    }
-    Ok(())
-}
-#[tauri::command]
-fn recovery_load(
-    app: tauri::AppHandle,
-    access: State<'_, Access>,
-) -> Result<Option<serde_json::Value>, String> {
-    let p = recovery_path(&app)?;
-    if !p.exists() {
-        return Ok(None);
-    }
-    let mut data = read_recovery(&p)?;
-    if let Some(session) = data.as_object_mut() {
-        if let Some(paths) = session
-            .remove("approvedPaths")
-            .and_then(|value| value.as_array().cloned())
-        {
-            let mut approved = access.0.lock().map_err(|_| "路径状态不可用")?;
-            for path in paths {
-                if let Some(path) = path.as_str() {
-                    approved.insert(PathBuf::from(path));
-                }
+        for path in paths {
+            match document::read(&path) {
+                Ok(doc) => result.documents.push(doc),
+                Err(error) => result.errors.push(format!(
+                    "{}: {error}",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                )),
             }
         }
-    }
-    Ok(Some(data))
-}
-#[tauri::command]
-fn recovery_save(
-    app: tauri::AppHandle,
-    access: State<'_, Access>,
-    mut data: serde_json::Value,
-) -> Result<(), String> {
-    let p = recovery_path(&app)?;
-    if data.is_null() {
-        if p.exists() {
-            std::fs::remove_file(p).map_err(|e| e.to_string())?;
-        }
-        return Ok(());
-    }
-    attach_approved_paths(&mut data, &access)?;
-    let bytes = serde_json::to_vec(&data).map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_SESSION_BYTES {
-        return Err("会话超过 256 MiB 限制".into());
-    }
-    document::atomic_write(&p, &bytes)
+        Ok(result)
+    })
+    .await
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -306,6 +109,7 @@ pub fn run() {
             }
         }))
         .manage(Access::default())
+        .manage(Writes::default())
         .manage(OpenRequests::default())
         .setup(|app| {
             let cwd = std::env::current_dir()?;
@@ -331,30 +135,6 @@ pub fn run() {
 #[cfg(test)]
 mod association_tests {
     use super::*;
-
-    #[test]
-    fn recovery_paths_only_come_from_native_authorization() {
-        let access = Access::default();
-        access.0.lock().unwrap().insert(PathBuf::from("chosen.txt"));
-        let mut session =
-            serde_json::json!({ "version": 1, "notes": [], "approvedPaths": ["forged.txt"] });
-        attach_approved_paths(&mut session, &access).unwrap();
-        assert_eq!(session["approvedPaths"], serde_json::json!(["chosen.txt"]));
-    }
-
-    #[test]
-    fn recovery_supports_large_session_and_atomic_replacement() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("recovery.json");
-        let data = serde_json::json!({ "version": 1, "text": "x".repeat(21 * 1024 * 1024) });
-        document::atomic_write(&path, &serde_json::to_vec(&data).unwrap()).unwrap();
-        assert_eq!(read_recovery(&path).unwrap(), data);
-        document::atomic_write(&path, b"{\"version\":1,\"notes\":[]}").unwrap();
-        assert_eq!(
-            read_recovery(&path).unwrap()["notes"],
-            serde_json::json!([])
-        );
-    }
 
     #[test]
     fn queues_only_existing_supported_text_files() {
