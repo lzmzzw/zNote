@@ -45,10 +45,10 @@ const codeColors = (night: boolean) => HighlightStyle.define([
   { tag: [tags.string, tags.special(tags.string)], color: night ? '#d99586' : '#9c4d35' },
   { tag: [tags.number, tags.bool, tags.atom], color: night ? '#78c8a9' : '#346c61' },
   { tag: [tags.comment, tags.meta], color: night ? '#a9afb5' : '#706c68', fontStyle: 'italic' },
-  { tag: [tags.typeName, tags.className, tags.propertyName], color: night ? '#9dc8e4' : '#386884' },
+  { tag: [tags.typeName, tags.className, tags.propertyName], color: night ? '#b8c4cf' : '#386884' },
   { tag: [tags.heading, tags.strong], color: night ? '#dedede' : '#382c2b', fontWeight: 'bold' },
   { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.link, color: night ? '#8ecbe7' : '#356c85' },
+  { tag: tags.link, color: night ? '#adc0cf' : '#356c85' },
 ]);
 const newsprintCode = codeColors(false); const nightCode = codeColors(true);
 function editorAppearance(night: boolean): Extension { return [EditorView.theme({}, { dark: night }), syntaxHighlighting(night ? nightCode : newsprintCode)]; }

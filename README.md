@@ -28,7 +28,7 @@
 
 编辑菜单的复制、剪切、粘贴和纯文本粘贴针对当前编辑器选区；“查找与替换”打开右上悬浮面板，拖动标题可临时移位，关闭后重新打开回到右上角。帮助菜单的检查更新查询 GitHub 最新发布版本，只报告结果，不自动下载安装。操作结果以短暂提示显示。浏览器开发预览只验证编辑界面，本地打开、保存与恢复需要桌面版。
 
-主题核心色参考 Typora 官方 [Newsprint](https://github.com/typora/typora-default-themes/blob/master/themes/newsprint.css) 与 [Night](https://github.com/typora/typora-default-themes/blob/master/themes/night.css) CSS：浅色使用 `#f3f2ee` 背景、`#1f0909` 正文；深色使用 `#363B40` 背景、`#2E3033` 侧栏、`#b8bfc6` 正文。其余控件颜色按 zNote 的结构和可读性适配。
+Newsprint 浅色主题参考 Typora 官方 [Newsprint](https://github.com/typora/typora-default-themes/blob/master/themes/newsprint.css) CSS，使用 `#f3f2ee` 背景与 `#1f0909` 正文。Night 深色主题参考同工作台 zTerm 的中性深色层级：标题栏近黑，编辑区为 `#1f1f21`，弹层和选中态以灰阶区分；保留克制的冷灰强调色，避免大面积偏蓝。顶栏菜单采用更小的字号与间距，并使用次级文字色。
 
 保存编码、换行格式、Markdown 宽度与 CSV 设置共用主题化下拉组件，与顶栏及右键菜单保持一致。支持方向键、Home/End 定位、Enter/空格确认、Esc 收起和 Tab 切换焦点；底栏下拉自动向上展开，选中项显示勾选标记。
 CSV 设置和查找替换的复选框使用统一主题外观，保留原生勾选语义、空格切换和焦点提示。文本输入、导出展开栏和主题分段选择沿用主题化控件；打开、保存等系统文件对话框保留 Windows 原生界面。
