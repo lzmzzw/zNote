@@ -366,7 +366,7 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
 }
 function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.map(note => note.name))) {
   const text = doc?.text ?? ''; const noteName = doc?.path?.split(/[\\/]/).pop() ?? name; const format = formatForName(noteName);
-  const note: Note = { path: null, text: '', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null, ...doc, id: nextId++, name: noteName, format, mode: defaultMode(format), markdownWidth: 'full', state: stateFor(text, format), saved: text, version: 0, dirty: false, metaDirty: false, requiresSaveAs: false, csvOptions: defaultCsvOptions(), scrollTop: 0, scrollLeft: 0, previewScrollTop: 0 };
+  const note: Note = { path: null, text: '', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: null, ...doc, id: nextId++, name: noteName, format, mode: defaultMode(format), markdownWidth: 'standard', state: stateFor(text, format), saved: text, version: 0, dirty: false, metaDirty: false, requiresSaveAs: false, csvOptions: defaultCsvOptions(), scrollTop: 0, scrollLeft: 0, previewScrollTop: 0 };
   notes.value = [...notes.value, note]; selectNote(note); return note;
 }
 function selectNote(note: Note) {
@@ -705,7 +705,7 @@ onBeforeUnmount(() => { gutterObserver?.disconnect(); view?.scrollDOM.removeEven
         <div class="mode-switch" role="group" aria-label="编辑模式"><button aria-label="源码" title="源码" :aria-pressed="mode === 'source'" :class="{ chosen: mode === 'source' }" @click="changeMode('source')"><Code2 :size="16" /></button><button aria-label="原位" title="原位" :aria-pressed="mode === 'live'" :class="{ chosen: mode === 'live' }" @click="changeMode('live')"><Eye :size="16" /></button><button aria-label="分屏" title="分屏" :aria-pressed="mode === 'split'" :class="{ chosen: mode === 'split' }" @click="changeMode('split')"><Columns2 :size="16" /></button></div>
       </div>
       <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；会话上限 256 MiB。</div>
-      <div class="writing-area" :class="[{ split: mode === 'split' && !large && (isMarkdown || isCsv || isJson), live: mode === 'live' && isMarkdown, reading: (currentFormat === 'txt' && !isStructuredText) || isMarkdown, structured: isJson || isCsv || isStructuredText }, isMarkdown && mode === 'live' ? `markdown-width-${active?.markdownWidth ?? 'full'}` : '']">
+      <div class="writing-area" :class="[{ split: mode === 'split' && !large && (isMarkdown || isCsv || isJson), live: mode === 'live' && isMarkdown, reading: (currentFormat === 'txt' && !isStructuredText) || isMarkdown, structured: isJson || isCsv || isStructuredText }, isMarkdown && mode === 'live' ? `markdown-width-${active?.markdownWidth ?? 'standard'}` : '']">
         <div v-show="!(mode === 'live' && isCsv && !large)" ref="host" class="editor-host"></div>
         <article v-if="mode === 'split' && !large && isMarkdown" ref="previewHost" class="preview" aria-label="Markdown 预览" @scroll="onPreviewScroll" @click.prevent="onPreviewClick" v-html="preview"></article>
         <section v-if="mode === 'split' && !large && isJson" ref="previewHost" class="preview json-preview" aria-label="JSON 结构预览" @scroll="onPreviewScroll" @click="onPreviewClick">

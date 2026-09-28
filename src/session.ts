@@ -21,7 +21,7 @@ export function parseSession(data: unknown): Session | null {
   // 兼容旧版仅保存正文的草稿，迁移后仍作为未保存文档。
   if (Array.isArray(data)) {
     data = { version: 1, activeIndex: data.length - 1, outlineCollapsed: false, notes: data.map(doc => ({
-      ...doc, path: null, revision: null, format: doc.format ?? 'txt', mode: 'source', markdownWidth: 'full', saved: '', dirty: true,
+      ...doc, path: null, revision: null, format: doc.format ?? 'txt', mode: 'source', markdownWidth: 'standard', saved: '', dirty: true,
       metaDirty: true, requiresSaveAs: false, editor: { doc: doc.text, selection: { ranges: [{ anchor: 0, head: 0 }], main: 0 } },
       csvOptions: defaultCsvOptions(), scrollTop: 0, scrollLeft: 0, previewScrollTop: 0, collapsedHeadings: [],
     })) };
@@ -29,7 +29,7 @@ export function parseSession(data: unknown): Session | null {
   const session = data as Session;
   if (session.version !== 1 || !Array.isArray(session.notes) || !Number.isInteger(session.activeIndex) || typeof session.outlineCollapsed !== 'boolean') throw new Error('会话格式无效');
   for (const note of session.notes) {
-    if (note && note.markdownWidth === undefined) note.markdownWidth = 'full';
+    if (note && note.markdownWidth === undefined) note.markdownWidth = 'standard';
     if (!note || typeof note.name !== 'string' || (note.path !== null && typeof note.path !== 'string') ||
       (note.revision !== null && typeof note.revision !== 'string') || typeof note.editor?.doc !== 'string' ||
       (note.saved !== null && typeof note.saved !== 'string') || typeof note.bom !== 'boolean' ||

@@ -38,11 +38,11 @@ describe('persistent session', () => {
     const state = restoreEditor(session.notes[0].editor, { extensions: [history()] });
     expect(state.doc.toString()).toBe('# draft');
   });
-  it('uses full width for sessions saved before Markdown width settings', () => {
+  it('uses standard width for sessions saved before Markdown width settings', () => {
     const oldNote = note(EditorState.create({ doc: '# note' }), 'C:/note.md');
     delete (oldNote as Partial<SessionNote>).markdownWidth;
     const session = parseSession({ version: 1, activeIndex: 0, outlineCollapsed: false, notes: [oldNote] });
-    expect(session?.notes[0].markdownWidth).toBe('full');
+    expect(session?.notes[0].markdownWidth).toBe('standard');
   });
   it('rejects corrupt session instead of silently dropping a tab', () => {
     expect(() => parseSession({ version: 1, activeIndex: 0, outlineCollapsed: false, notes: [{}] })).toThrow();

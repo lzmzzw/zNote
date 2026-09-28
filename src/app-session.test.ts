@@ -44,9 +44,9 @@ describe('window controls', () => {
   });
 });
 describe('Markdown width settings', () => {
-  it('defaults to full width and restores a per-tab width choice', async () => {
+  it('defaults to standard width and restores a per-tab width choice', async () => {
     await mount(); await openDoc('note.md', '# heading');
-    expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-full')).toBe(true);
+    expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-standard')).toBe(true);
     [...root.querySelectorAll<HTMLButtonElement>('.menu-group > button')].find(button => button.textContent === '格式')!.click();
     await nextTick();
     [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('Markdown 设置'))!.click();
@@ -56,7 +56,7 @@ describe('Markdown width settings', () => {
     expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-compact')).toBe(true);
     root.querySelector<HTMLButtonElement>('[aria-label="关闭 Markdown 设置"]')!.click(); await nextTick();
     await openDoc('other.md', '# second');
-    expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-full')).toBe(true);
+    expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-standard')).toBe(true);
     root.querySelectorAll<HTMLButtonElement>('.tab [role="tab"]')[1].click(); await nextTick();
     expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-compact')).toBe(true);
     await close();
