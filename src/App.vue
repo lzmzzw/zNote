@@ -717,6 +717,7 @@ function reconfigure() {
 }
 function changeMode(value: DisplayMode) {
   stopCsvResize();
+  const formatLiveJson = value === 'live' && mode.value !== 'live' && isJson.value && !large.value && !!active.value?.state.doc.length;
   mode.value = value;
   if (active.value) active.value.mode = value;
   previewSync.reset();
@@ -724,6 +725,7 @@ function changeMode(value: DisplayMode) {
   refreshDerived();
   scheduleRecovery();
   void nextTick(() => view?.requestMeasure());
+  if (formatLiveJson) formatJson();
 }
 function setTheme(night: boolean) {
   dark.value = night;

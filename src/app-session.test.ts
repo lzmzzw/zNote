@@ -228,6 +228,22 @@ describe('regional context menus', () => {
     expect(editor().state.doc.toString()).toBe(source);
     expect(root.querySelector('[role="tab"][aria-label="data.json，已保存"]')).not.toBeNull();
   });
+  it('formats JSON when entering live mode and keeps the result editable and undoable', async () => {
+    const source = '{"id":9007199254740993,"nested":{"x":1}}';
+    await mount(); await openDoc('data.json', source);
+    root.querySelector<HTMLButtonElement>('.mode-switch button[aria-label="原位"]')!.click();
+    await nextTick();
+    const request = formatWorker.posted.at(-1)!;
+    expect(request).toMatchObject({ kind: 'json', text: source });
+    formatWorker.onmessage!({ data: { id: request.id, text: '{\n  "id": 9007199254740993,\n  "nested": {\n    "x": 1\n  }\n}' } } as MessageEvent);
+    await nextTick();
+    expect(editor().state.doc.toString()).toContain('\n  "id": 9007199254740993,');
+    editor().dispatch({ changes: { from: editor().state.doc.length - 1, insert: ' ' } });
+    expect(editor().state.doc.toString()).toContain('\n }');
+    expect(undo(editor())).toBe(true);
+    expect(undo(editor())).toBe(true);
+    expect(editor().state.doc.toString()).toBe(source);
+  });
   it('keeps right preview buttons limited to valid JSON and accepts JSONC comments', async () => {
     await mount(); await openDoc('broken.json', '{"x":}');
     expect(root.querySelector('.json-preview-pane button')).toBeNull();

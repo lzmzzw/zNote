@@ -277,9 +277,9 @@ footer .outline-toggle:hover {
 .json-float-actions {
   position: absolute;
   z-index: 5;
-  top: 7px;
+  top: 6px;
   right: 9px;
-  height: 27px;
+  height: calc(var(--font-size-code) * 1.6);
   display: flex;
   align-items: center;
   gap: 1px;

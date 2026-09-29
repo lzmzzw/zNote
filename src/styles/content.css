@@ -125,10 +125,10 @@
 .json-preview {
   font-size: var(--font-size-code);
   line-height: 1.6;
-  font-family: var(--font-mono);
+  font-family: 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  padding-top: 6px;
 }
 .json-preview-row {
-  min-height: 27px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -137,7 +137,7 @@
 }
 .json-preview .json-preview-text {
   margin: 0;
-  padding: 27px 0 0;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
