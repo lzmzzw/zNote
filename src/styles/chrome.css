@@ -161,6 +161,12 @@ footer .outline-toggle:hover {
   color: var(--accent);
   box-shadow: inset 0 2px var(--accent);
 }
+.tab:hover {
+  background: var(--hover);
+}
+.tab.active:hover {
+  background: var(--bg);
+}
 .tab > button:first-child {
   padding: 0 13px;
   height: 100%;
@@ -168,10 +174,18 @@ footer .outline-toggle:hover {
   min-width: 0;
   gap: 8px;
 }
+.tab > button:first-child:hover {
+  background: transparent;
+}
 .tab .close-tab {
   margin-right: 8px;
   padding: 4px;
   border-radius: 4px;
+}
+.tab .close-tab:hover,
+.tab .close-tab:focus-visible {
+  background: var(--selected);
+  color: var(--accent);
 }
 .add-tab {
   width: 38px;

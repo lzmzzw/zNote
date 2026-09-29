@@ -938,13 +938,15 @@ function requestClose(note: Note) {
   startCloseQueue([note.id]);
 }
 function removeNote(note: Note) {
+  const index = notes.value.indexOf(note);
+  const nextActive = notes.value[index - 1] ?? notes.value[index + 1];
   notes.value = notes.value.filter((n) => n.id !== note.id);
   const { [note.id]: _removed, ...remaining } = collapsedHeadings.value;
   collapsedHeadings.value = remaining;
   const { [note.id]: _previewMode, ...previewModes } = jsonPreviewModes.value;
   jsonPreviewModes.value = previewModes;
   if (!notes.value.length) createNote();
-  else if (activeId.value === note.id) selectNote(notes.value[0]);
+  else if (activeId.value === note.id && nextActive) selectNote(nextActive);
   scheduleRecovery();
 }
 async function resolveClose(action: 'save' | 'discard' | 'cancel') {

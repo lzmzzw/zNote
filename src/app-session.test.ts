@@ -329,6 +329,20 @@ describe('editor typography', () => {
   });
 });
 describe('session lifecycle', () => {
+  it('selects the nearest left tab after closing the active tab, or the right tab when first', async () => {
+    await mount(); await openDoc('a.txt', 'a'); await openDoc('b.txt', 'b');
+    root.querySelectorAll<HTMLButtonElement>('.tab .close-tab')[2].click(); await nextTick();
+    expect(root.querySelector('.tab.active')?.textContent).toContain('a.txt');
+    root.querySelectorAll<HTMLButtonElement>('.tab [role="tab"]')[0].click(); await nextTick();
+    root.querySelectorAll<HTMLButtonElement>('.tab .close-tab')[0].click(); await nextTick();
+    [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(button => button.textContent === '不保存')!.click();
+    await new Promise(resolve => setTimeout(resolve, 10)); await nextTick();
+    expect(root.querySelector('.tab.active')?.textContent).toContain('a.txt');
+    await openDoc('c.txt', 'c');
+    root.querySelectorAll<HTMLButtonElement>('.tab [role="tab"]')[0].click(); await nextTick();
+    root.querySelectorAll<HTMLButtonElement>('.tab .close-tab')[1].click(); await nextTick();
+    expect(root.querySelector('.tab.active')?.textContent).toContain('a.txt');
+  });
   it('shows associated files of every format as saved until their content changes', async () => {
     bridge.requests = ['txt', 'md', 'json', 'csv'].map((extension) => ({
       path: `C:/sample.${extension}`, text: extension === 'csv' ? 'name,value\na,1' : 'content',
