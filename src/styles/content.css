@@ -132,9 +132,12 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.json-preview-pane .json-preview-row {
+  padding-right: 110px;
+}
 .json-preview .json-preview-text {
   margin: 0;
-  padding: 0;
+  padding: 27px 0 0;
   border: 0;
   border-radius: 0;
   background: transparent;

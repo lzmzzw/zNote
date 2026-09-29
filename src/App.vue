@@ -351,7 +351,7 @@ function onContextMenu(event: MouseEvent) {
   }
   if (
     target.closest(
-      '.titlebar, .mode-switch, .json-pane-toolbar, footer, .cm-gutters, .cm-search, .modal-backdrop, button.close-tab, button.add-tab',
+      '.titlebar, .mode-switch, .json-float-actions, footer, .cm-gutters, .cm-search, .modal-backdrop, button.close-tab, button.add-tab',
     )
   )
     return;
@@ -1510,8 +1510,8 @@ onBeforeUnmount(() => {
             isMarkdown && mode === 'live' ? `markdown-width-${active?.markdownWidth ?? 'standard'}` : '',
           ]"
         >
-          <div class="source-pane" v-show="!(mode === 'live' && isCsv && !large)">
-            <div v-if="mode === 'split' && !large && isJson" class="json-pane-toolbar" aria-label="JSON 源码操作">
+          <div class="source-pane" :class="{ 'json-source-pane': mode === 'split' && !large && isJson }" v-show="!(mode === 'live' && isCsv && !large)">
+            <div v-if="mode === 'split' && !large && isJson" class="json-float-actions" aria-label="JSON 源码操作">
               <button title="将整份源码转为 JSON 字符串" :disabled="busy || !count" @click="transformJson('escape')">转义</button>
               <button title="将完整 JSON 字符串去除一层转义" :disabled="busy || !count" @click="transformJson('unescape')">去除转义</button>
             </div>
@@ -1527,11 +1527,9 @@ onBeforeUnmount(() => {
             v-html="preview"
           ></article>
           <div v-if="mode === 'split' && !large && isJson" class="json-preview-pane">
-            <div class="json-pane-toolbar" aria-label="JSON 预览操作">
-              <template v-if="jsonValid">
-                <button title="压缩预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'compact'" @click="setJsonPreviewMode('compact')">压缩</button>
-                <button title="展开预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'expanded'" @click="setJsonPreviewMode('expanded')">展开</button>
-              </template>
+            <div v-if="jsonValid" class="json-float-actions" aria-label="JSON 预览操作">
+              <button title="压缩预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'compact'" @click="setJsonPreviewMode('compact')">压缩</button>
+              <button title="展开预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'expanded'" @click="setJsonPreviewMode('expanded')">展开</button>
             </div>
             <section
               ref="previewHost"

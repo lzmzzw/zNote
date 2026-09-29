@@ -242,14 +242,14 @@ describe('regional context menus', () => {
     const formatMenu = () => [...root.querySelectorAll<HTMLButtonElement>('.app-menu button')].find(button => button.textContent === '格式')!;
     formatMenu().click(); await nextTick();
     [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent === '显示为 JSON')!.click(); await nextTick();
-    expect(root.querySelector('.json-pane-toolbar button')).not.toBeNull();
-    root.querySelector<HTMLButtonElement>('.json-pane-toolbar button')!.click();
+    expect(root.querySelector('.json-float-actions button')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('.json-float-actions button')!.click();
     const escape = formatWorker.posted.at(-1)!;
     expect(escape.kind).toBe('escape');
     formatWorker.onmessage!({ data: { id: escape.id, text: JSON.stringify(escape.text) } } as MessageEvent);
     await nextTick();
     expect(editor().state.doc.toString()).toBe('"{\\"x\\":1}"');
-    root.querySelectorAll<HTMLButtonElement>('.json-pane-toolbar button')[1].click();
+    root.querySelectorAll<HTMLButtonElement>('.json-float-actions button')[1].click();
     const unescape = formatWorker.posted.at(-1)!;
     expect(unescape.kind).toBe('unescape');
     formatWorker.onmessage!({ data: { id: unescape.id, text: JSON.parse(unescape.text) } } as MessageEvent);
@@ -262,7 +262,7 @@ describe('regional context menus', () => {
     formatMenu().click(); await nextTick();
     [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent === '转为 JSON')!.click(); await nextTick();
     expect(root.querySelector('.json-preview-pane button')).not.toBeNull();
-    expect(root.querySelectorAll('.json-pane-toolbar button')).toHaveLength(4);
+    expect(root.querySelectorAll('.json-float-actions button')).toHaveLength(4);
   });
   it('does not enter a live Markdown block on right-click and copies source or plain text', async () => {
     await mount(); await openDoc('note.md', '# Title\n\n**bold** text');

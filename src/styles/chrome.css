@@ -243,6 +243,7 @@ footer .outline-toggle:hover {
   padding: 0;
 }
 .source-pane {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -260,6 +261,7 @@ footer .outline-toggle:hover {
   flex: 1;
 }
 .json-preview-pane {
+  position: relative;
   width: 50%;
   min-width: 0;
   min-height: 0;
@@ -272,28 +274,44 @@ footer .outline-toggle:hover {
   border-left: 0;
   min-height: 0;
 }
-.json-pane-toolbar {
-  height: 34px;
-  flex: none;
+.json-float-actions {
+  position: absolute;
+  z-index: 5;
+  top: 7px;
+  right: 9px;
+  height: 27px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 3px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  gap: 1px;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: var(--bg);
+  opacity: 0.25;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
 }
-.json-pane-toolbar button {
-  height: 26px;
+.json-float-actions:hover,
+.json-float-actions:focus-within {
+  opacity: 1;
+  background: var(--panel);
+  border-color: var(--border);
+}
+.json-float-actions button {
+  height: 23px;
   padding: 0 8px;
   font-size: 11px;
   color: var(--muted);
   border-radius: 3px;
+  white-space: nowrap;
 }
-.json-pane-toolbar button:hover,
-.json-pane-toolbar button[aria-pressed='true'] {
+.json-float-actions button:hover,
+.json-float-actions button:focus-visible,
+.json-float-actions button[aria-pressed='true'] {
   color: var(--accent);
   background: var(--selected);
+}
+.json-source-pane .cm-line {
+  padding-right: 150px;
 }
 .notice {
   padding: 7px 30px;
