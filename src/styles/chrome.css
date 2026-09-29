@@ -242,14 +242,58 @@ footer .outline-toggle:hover {
   display: flex;
   padding: 0;
 }
+.source-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .editor-host {
   flex: 1;
+  min-height: 0;
   min-width: 0;
   overflow: hidden;
 }
-.split .editor-host {
+.split .source-pane {
   width: 50%;
   flex: 1;
+}
+.json-preview-pane {
+  width: 50%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+.json-preview-pane .preview {
+  border-left: 0;
+  min-height: 0;
+}
+.json-pane-toolbar {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.json-pane-toolbar button {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  border-radius: 3px;
+}
+.json-pane-toolbar button:hover,
+.json-pane-toolbar button[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--selected);
 }
 .notice {
   padding: 7px 30px;

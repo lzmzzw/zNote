@@ -15,9 +15,9 @@ export interface JsonPreviewRow {
   nodeTo?: number;
 }
 
-export function jsonPreviewRows(text: string): JsonPreviewRow[] {
+export function buildJsonPreview(text: string, strict = false): { rows: JsonPreviewRow[]; valid: boolean } {
   const errors: ParseError[] = [];
-  const root = parseTree(text, errors, { allowTrailingComma: true });
+  const root = parseTree(text, errors, { allowTrailingComma: !strict, disallowComments: strict });
   const starts = [0];
   for (const match of text.matchAll(/\r\n|\r|\n/g)) starts.push(match.index + match[0].length);
   const lineAt = (offset: number) => {
@@ -31,7 +31,7 @@ export function jsonPreviewRows(text: string): JsonPreviewRow[] {
     return low + 1;
   };
   if (!root || errors.length)
-    return text
+    return { valid: false, rows: text
       .split(/\r\n|\r|\n/)
       .map((value, index) => ({
         line: index + 1,
@@ -41,7 +41,7 @@ export function jsonPreviewRows(text: string): JsonPreviewRow[] {
         label: '',
         value,
         kind: 'raw',
-      }));
+      })) };
 
   const rows: JsonPreviewRow[] = [];
   function visit(node: JsonNode, depth: number, propertyName?: string, propertyFrom = node.offset) {
@@ -97,5 +97,9 @@ export function jsonPreviewRows(text: string): JsonPreviewRow[] {
       });
   }
   visit(root, 0);
-  return rows;
+  return { rows, valid: true };
+}
+
+export function jsonPreviewRows(text: string): JsonPreviewRow[] {
+  return buildJsonPreview(text).rows;
 }

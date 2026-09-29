@@ -132,6 +132,19 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.json-preview .json-preview-text {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  white-space: pre;
+  overflow: visible;
+  width: max-content;
+  min-width: 100%;
+}
 .json-key {
   color: var(--accent);
 }

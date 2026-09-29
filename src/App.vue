@@ -3,7 +3,7 @@ import 'katex/dist/katex.min.css';
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { bracketMatching } from '@codemirror/language';
@@ -34,7 +34,8 @@ import {
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
 import { defaultCsvOptions, parseCsv, type CsvOptions } from './csv';
-import { jsonPreviewRows, type JsonPreviewRow } from './json-preview';
+import { buildJsonPreview, type JsonPreviewRow } from './json-preview';
+import { compactJsonc, formatJsonc } from './format';
 import { liveMarkdownBlocks } from './live-markdown';
 import { hydrateDiagrams } from './diagram';
 import { conversionMenuState, displayMenuState, needsSave, nextUntitledName } from './note-file';
@@ -169,6 +170,10 @@ function nudgeCsvColumn(column: number, amount: number) {
   scheduleRecovery();
 }
 const jsonRows = ref<JsonPreviewRow[]>([]);
+const jsonValid = ref(false);
+const jsonPreviewText = ref('');
+const jsonPreviewModes = ref<Record<number, 'compact' | 'expanded' | undefined>>({});
+const jsonPreviewMode = computed(() => jsonPreviewModes.value[activeId.value]);
 const previewHost = ref<HTMLElement>();
 const previewSync = createPreviewSync(
   () => view,
@@ -197,7 +202,7 @@ let recoveryTimer: ReturnType<typeof setTimeout>;
 let worker: Worker;
 let formatId = 0;
 let pendingFormat:
-  { id: number; note: Note; version: number; format: NoteFormat; from: number; to: number } | undefined;
+  { id: number; note: Note; version: number; format: NoteFormat; from: number; to: number; operation: 'format' | 'escape' | 'unescape' } | undefined;
 let recoveryWrite: Promise<unknown> = Promise.resolve();
 let sessionReady = false;
 const closingWindow = ref(false);
@@ -346,7 +351,7 @@ function onContextMenu(event: MouseEvent) {
   }
   if (
     target.closest(
-      '.titlebar, .mode-switch, footer, .cm-gutters, .cm-search, .modal-backdrop, button.close-tab, button.add-tab',
+      '.titlebar, .mode-switch, .json-pane-toolbar, footer, .cm-gutters, .cm-search, .modal-backdrop, button.close-tab, button.add-tab',
     )
   )
     return;
@@ -459,6 +464,15 @@ function onContextMenu(event: MouseEvent) {
   }
   const jsonPreview = target.closest('.json-preview');
   if (jsonPreview) {
+    if (jsonPreviewMode.value && jsonValid.value) {
+      const selected = selectedText(jsonPreview);
+      const text = jsonPreviewText.value;
+      showContext(event, [
+        { label: '复制选中文字', disabled: !selected, action: () => copyText(selected) },
+        { label: '复制预览全文', action: () => copyText(text) },
+      ]);
+      return;
+    }
     const rowElement = target.closest<HTMLElement>('.json-preview-row');
     const row = rowElement
       ? jsonRows.value[[...jsonPreview.querySelectorAll('.json-preview-row')].indexOf(rowElement)]
@@ -728,6 +742,8 @@ function refreshDerived() {
     csvRows.value = [];
     csvRowLines.value = [];
     jsonRows.value = [];
+    jsonValid.value = false;
+    jsonPreviewText.value = '';
     csvError.value = null;
     reconfigure();
     return;
@@ -751,7 +767,15 @@ function refreshDerived() {
       csvRowLines.value = parsed.rowLines;
       csvError.value = parsed.error;
     } else if (isMarkdown.value) preview.value = renderMarkdown(text);
-    else if (isJson.value) jsonRows.value = jsonPreviewRows(text);
+    else if (isJson.value) {
+      const strict = !/\.jsonc$/i.test(active.value.name);
+      const result = buildJsonPreview(text, strict);
+      jsonRows.value = result.rows;
+      jsonValid.value = result.valid;
+      jsonPreviewText.value = result.valid && jsonPreviewMode.value
+        ? jsonPreviewMode.value === 'compact' ? compactJsonc(text, strict) : formatJsonc(text, strict)
+        : '';
+    }
     void nextTick(() => {
       if (isMarkdown.value && previewHost.value) hydrateDiagrams(previewHost.value, dark.value);
       previewSync.highlight();
@@ -915,6 +939,8 @@ function removeNote(note: Note) {
   notes.value = notes.value.filter((n) => n.id !== note.id);
   const { [note.id]: _removed, ...remaining } = collapsedHeadings.value;
   collapsedHeadings.value = remaining;
+  const { [note.id]: _previewMode, ...previewModes } = jsonPreviewModes.value;
+  jsonPreviewModes.value = previewModes;
   if (!notes.value.length) createNote();
   else if (activeId.value === note.id) selectNote(notes.value[0]);
   scheduleRecovery();
@@ -946,9 +972,23 @@ function formatJson() {
     return;
   }
   const id = ++formatId;
-  pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length };
+  pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length, operation: 'format' };
   status.value = '正在格式化…';
   worker.postMessage({ id, kind: 'json', text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) });
+}
+function transformJson(operation: 'escape' | 'unescape') {
+  const note = active.value;
+  if (!note || busy.value || note.format !== 'json' || mode.value !== 'split' || large.value) return;
+  const id = ++formatId;
+  pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length, operation };
+  status.value = operation === 'escape' ? '正在转义…' : '正在去除转义…';
+  worker.postMessage({ id, kind: operation, text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) });
+}
+function setJsonPreviewMode(value: 'compact' | 'expanded') {
+  const note = active.value;
+  if (!note || !jsonValid.value || note.format !== 'json') return;
+  jsonPreviewModes.value = { ...jsonPreviewModes.value, [note.id]: jsonPreviewMode.value === value ? undefined : value };
+  refreshDerived();
 }
 function updateCsvOptions(changes: Partial<CsvOptions>) {
   const note = active.value;
@@ -1261,23 +1301,27 @@ onMounted(async () => {
       pending.note.format !== pending.format ||
       !notes.value.includes(pending.note)
     ) {
-      status.value = '内容已变化，已忽略过期格式化结果';
+      status.value = '内容已变化，已忽略过期文本转换结果';
       return;
     }
     if (data.error) {
       status.value = data.error;
       return;
     }
+    if (data.text === pending.note.state.doc.toString()) {
+      status.value = '内容无需修改';
+      return;
+    }
     const changes = { from: pending.from, to: pending.to, insert: data.text! };
-    if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format' });
+    if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format', annotations: isolateHistory.of('full') });
     else {
-      pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format' }).state;
+      pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format', annotations: isolateHistory.of('full') }).state;
       pending.note.version++;
       pending.note.dirty = true;
       touch();
       scheduleRecovery();
     }
-    status.value = '已格式化 · Ctrl + Z 可撤销';
+    status.value = `${{ format: '已格式化', escape: '已转义', unescape: '已去除转义' }[pending.operation]} · Ctrl + Z 可撤销`;
   };
   window.addEventListener('keydown', shortcuts);
   sessionReady = true;
@@ -1466,7 +1510,13 @@ onBeforeUnmount(() => {
             isMarkdown && mode === 'live' ? `markdown-width-${active?.markdownWidth ?? 'standard'}` : '',
           ]"
         >
-          <div v-show="!(mode === 'live' && isCsv && !large)" ref="host" class="editor-host"></div>
+          <div class="source-pane" v-show="!(mode === 'live' && isCsv && !large)">
+            <div v-if="mode === 'split' && !large && isJson" class="json-pane-toolbar" aria-label="JSON 源码操作">
+              <button title="将整份源码转为 JSON 字符串" :disabled="busy || !count" @click="transformJson('escape')">转义</button>
+              <button title="将完整 JSON 字符串去除一层转义" :disabled="busy || !count" @click="transformJson('unescape')">去除转义</button>
+            </div>
+            <div ref="host" class="editor-host"></div>
+          </div>
           <article
             v-if="mode === 'split' && !large && isMarkdown"
             ref="previewHost"
@@ -1476,29 +1526,37 @@ onBeforeUnmount(() => {
             @click.prevent="onPreviewClick"
             v-html="preview"
           ></article>
-          <section
-            v-if="mode === 'split' && !large && isJson"
-            ref="previewHost"
-            class="preview json-preview"
-            aria-label="JSON 结构预览"
-            @scroll="onPreviewScroll"
-            @click="onPreviewClick"
-          >
-            <div
-              v-for="(row, index) in jsonRows"
-              :key="index"
-              class="json-preview-row"
-              :class="`json-${row.kind}`"
-              :data-source-start="row.line"
-              :data-source-end="row.line"
-              :data-source-from="row.from"
-              :data-source-to="row.to"
-              :style="{ paddingLeft: `${row.depth * 18}px` }"
-            >
-              <span v-if="row.propertyName !== undefined" class="json-key">{{ row.label || '""' }}: </span
-              ><span>{{ row.value }}</span>
+          <div v-if="mode === 'split' && !large && isJson" class="json-preview-pane">
+            <div class="json-pane-toolbar" aria-label="JSON 预览操作">
+              <template v-if="jsonValid">
+                <button title="压缩预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'compact'" @click="setJsonPreviewMode('compact')">压缩</button>
+                <button title="展开预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'expanded'" @click="setJsonPreviewMode('expanded')">展开</button>
+              </template>
             </div>
-          </section>
+            <section
+              ref="previewHost"
+              class="preview json-preview"
+              :aria-label="jsonPreviewMode && jsonValid ? 'JSON 文本预览' : 'JSON 结构预览'"
+              @scroll="onPreviewScroll"
+              @click="onPreviewClick"
+            >
+              <pre v-if="jsonPreviewMode && jsonValid" class="json-preview-text">{{ jsonPreviewText }}</pre>
+              <div
+                v-for="(row, index) in jsonPreviewMode && jsonValid ? [] : jsonRows"
+                :key="index"
+                class="json-preview-row"
+                :class="`json-${row.kind}`"
+                :data-source-start="row.line"
+                :data-source-end="row.line"
+                :data-source-from="row.from"
+                :data-source-to="row.to"
+                :style="{ paddingLeft: `${row.depth * 18}px` }"
+              >
+                <span v-if="row.propertyName !== undefined" class="json-key">{{ row.label || '""' }}: </span
+                ><span>{{ row.value }}</span>
+              </div>
+            </section>
+          </div>
           <section
             v-if="mode !== 'source' && !large && isCsv"
             ref="previewHost"

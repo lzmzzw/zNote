@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, nextTick, type App as VueApp } from 'vue';
 import { EditorView } from '@codemirror/view';
+import { undo } from '@codemirror/commands';
 import App from './App.vue';
 
 const bridge = vi.hoisted(() => ({ data: null as unknown, close: undefined as undefined | ((event: { preventDefault(): void }) => Promise<void>), destroy: vi.fn(), fail: false, open: null as unknown, requests: [] as unknown[], saveArgs: null as unknown, maximized: false, resized: undefined as undefined | (() => void) }));
@@ -21,6 +22,7 @@ vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: updater.relaunch }));
 let app: VueApp | undefined; let root: HTMLDivElement;
 const writeText = vi.fn(async (_text: string) => {});
 const readText = vi.fn(async () => 'pasted');
+let formatWorker: { onmessage: ((event: MessageEvent<{ id: number; text?: string; error?: string }>) => void) | null; posted: { id: number; kind: string; text: string }[] };
 async function mount() { root = document.createElement('div'); document.body.append(root); app = createApp(App); app.mount(root); await new Promise(resolve => setTimeout(resolve, 30)); await nextTick(); }
 function unmount() { app?.unmount(); app = undefined; root?.remove(); }
 function key(value: string) { window.dispatchEvent(new KeyboardEvent('keydown', { key: value, ctrlKey: true, bubbles: true })); }
@@ -29,7 +31,13 @@ async function close() { await bridge.close!({ preventDefault: vi.fn() }); }
 beforeEach(() => {
   bridge.data = null; bridge.fail = false; bridge.open = null; bridge.requests = []; bridge.saveArgs = null; bridge.maximized = false; bridge.resized = undefined; bridge.destroy.mockClear();
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
-  vi.stubGlobal('Worker', class { onmessage = null; postMessage() {} terminate() {} });
+  vi.stubGlobal('Worker', class {
+    onmessage = null;
+    posted: { id: number; kind: string; text: string }[] = [];
+    constructor() { formatWorker = this; }
+    postMessage(message: { id: number; kind: string; text: string }) { this.posted.push(message); }
+    terminate() {}
+  });
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => new DOMRect();
   Element.prototype.scrollIntoView = vi.fn();
@@ -201,6 +209,60 @@ describe('regional context menus', () => {
     await choose('复制值'); expect(writeText).toHaveBeenLastCalledWith('9007199254740993');
     await rightClick(row); await choose('复制节点原文'); expect(writeText).toHaveBeenLastCalledWith('"id":9007199254740993');
     await rightClick(row); await choose('复制属性名'); expect(writeText).toHaveBeenLastCalledWith('id');
+  });
+  it('shows compact and expanded JSON text without changing the source, and copies the visible preview', async () => {
+    const source = '{ "id": 9007199254740993, "id": 2 }';
+    await mount(); await openDoc('data.json', source);
+    const compact = root.querySelector<HTMLButtonElement>('.json-preview-pane button[title^="压缩预览"]')!;
+    compact.click(); await nextTick();
+    expect(root.querySelector('.json-preview-text')?.textContent).toBe('{"id":9007199254740993,"id":2}');
+    await rightClick(root.querySelector('.json-preview-text')!);
+    expect(labels()).toEqual(['复制选中文字', '复制预览全文']);
+    await choose('复制预览全文');
+    expect(writeText).toHaveBeenLastCalledWith('{"id":9007199254740993,"id":2}');
+    root.querySelector<HTMLButtonElement>('.json-preview-pane button[title^="展开预览"]')!.click(); await nextTick();
+    const expanded = root.querySelector('.json-preview-text')!.textContent!;
+    expect(expanded).toContain('\n  "id": 9007199254740993,');
+    await rightClick(root.querySelector('.json-preview-text')!); await choose('复制预览全文');
+    expect(writeText).toHaveBeenLastCalledWith(expanded);
+    expect(editor().state.doc.toString()).toBe(source);
+    expect(root.querySelector('[role="tab"][aria-label="data.json，已保存"]')).not.toBeNull();
+  });
+  it('keeps right preview buttons limited to valid JSON and accepts JSONC comments', async () => {
+    await mount(); await openDoc('broken.json', '{"x":}');
+    expect(root.querySelector('.json-preview-pane button')).toBeNull();
+    expect(root.querySelector('.json-raw')).not.toBeNull();
+    await openDoc('commented.jsonc', '// keep\n{"x":1,}');
+    root.querySelector<HTMLButtonElement>('.json-preview-pane button[title^="压缩预览"]')!.click(); await nextTick();
+    expect(root.querySelector('.json-preview-text')?.textContent).toBe('// keep\n{"x":1,}');
+  });
+  it('exposes JSON actions after display-as and convert-to, and applies source transforms as one undoable edit', async () => {
+    await mount();
+    editor().dispatch({ changes: { from: 0, insert: '{"x":1}' } });
+    const formatMenu = () => [...root.querySelectorAll<HTMLButtonElement>('.app-menu button')].find(button => button.textContent === '格式')!;
+    formatMenu().click(); await nextTick();
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent === '显示为 JSON')!.click(); await nextTick();
+    expect(root.querySelector('.json-pane-toolbar button')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('.json-pane-toolbar button')!.click();
+    const escape = formatWorker.posted.at(-1)!;
+    expect(escape.kind).toBe('escape');
+    formatWorker.onmessage!({ data: { id: escape.id, text: JSON.stringify(escape.text) } } as MessageEvent);
+    await nextTick();
+    expect(editor().state.doc.toString()).toBe('"{\\"x\\":1}"');
+    root.querySelectorAll<HTMLButtonElement>('.json-pane-toolbar button')[1].click();
+    const unescape = formatWorker.posted.at(-1)!;
+    expect(unescape.kind).toBe('unescape');
+    formatWorker.onmessage!({ data: { id: unescape.id, text: JSON.parse(unescape.text) } } as MessageEvent);
+    await nextTick();
+    expect(editor().state.doc.toString()).toBe('{"x":1}');
+    undo(editor()); await nextTick();
+    expect(editor().state.doc.toString()).toBe('"{\\"x\\":1}"');
+    key('n'); await nextTick();
+    editor().dispatch({ changes: { from: 0, insert: '{"y":2}' } });
+    formatMenu().click(); await nextTick();
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent === '转为 JSON')!.click(); await nextTick();
+    expect(root.querySelector('.json-preview-pane button')).not.toBeNull();
+    expect(root.querySelectorAll('.json-pane-toolbar button')).toHaveLength(4);
   });
   it('does not enter a live Markdown block on right-click and copies source or plain text', async () => {
     await mount(); await openDoc('note.md', '# Title\n\n**bold** text');
