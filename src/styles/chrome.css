@@ -283,18 +283,13 @@ footer .outline-toggle:hover {
   display: flex;
   align-items: center;
   gap: 1px;
-  padding: 1px 3px;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: var(--bg);
+  padding: 2px 4px;
   opacity: 0.25;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 .json-float-actions:hover,
 .json-float-actions:focus-within {
   opacity: 1;
-  background: var(--panel);
-  border-color: var(--border);
 }
 .json-float-actions button {
   height: 23px;
