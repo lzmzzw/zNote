@@ -50,6 +50,7 @@ import DocumentOutline from './components/DocumentOutline.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import OptionSelect from './components/OptionSelect.vue';
 import { tabCloseTargets, spreadsheetText, type ContextMenuItem } from './context-menu';
+import { DEFAULT_DOCUMENT_FONT_SIZE, isDocumentFontSize, restoreDocumentFontSize } from './typography';
 
 import {
   defaultMode,
@@ -72,6 +73,17 @@ const host = ref<HTMLElement>();
 let view: EditorView | undefined;
 const mode = ref<DisplayMode>('live');
 const dark = ref(false);
+const documentFontSize = ref(DEFAULT_DOCUMENT_FONT_SIZE);
+const documentFontStyle = computed(() => ({
+  '--font-size-reading': `${documentFontSize.value}px`,
+  '--font-size-code': `${documentFontSize.value}px`,
+}));
+function setDocumentFontSize(value: number) {
+  if (!isDocumentFontSize(value)) return;
+  documentFontSize.value = value;
+  localStorage.setItem('znote-font-size', String(value));
+  void nextTick(() => view?.requestMeasure());
+}
 const status = ref('准备就绪');
 const appVersion = ref(packageJson.version);
 const checkingUpdate = ref(false);
@@ -1240,6 +1252,7 @@ function setLineEnding(value: string) {
 }
 onMounted(async () => {
   dark.value = localStorage.getItem('znote-theme') === 'dark';
+  documentFontSize.value = restoreDocumentFontSize(localStorage.getItem('znote-font-size'));
   if (native) {
     appVersion.value = await getVersion();
     await syncMaximized();
@@ -1291,8 +1304,7 @@ onMounted(async () => {
   refreshDerived();
   if (document.fonts?.load)
     void Promise.allSettled([
-      document.fonts.load('16px "zNote Sans SC"'),
-      document.fonts.load('14px "zNote Mono SC"'),
+      document.fonts.load('14px "zNote Sans SC"'),
     ]).then(() => view?.requestMeasure());
   selectNote(active.value!);
   worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' });
@@ -1361,6 +1373,7 @@ onBeforeUnmount(() => {
   <div
     class="app"
     :class="{ dark }"
+    :style="documentFontStyle"
     :inert="closingWindow"
     @contextmenu.capture="onContextMenu"
     @mousedown.capture="onContextPointer"
@@ -1620,6 +1633,7 @@ onBeforeUnmount(() => {
       v-if="settings"
       :kind="settings"
       :dark="dark"
+      :font-size="documentFontSize"
       :encoding="active?.encoding"
       :line-ending="active?.lineEnding"
       :markdown-width="active?.markdownWidth"
@@ -1627,6 +1641,7 @@ onBeforeUnmount(() => {
       @close="settings = null"
       @restore-focus="view?.focus()"
       @theme="setTheme"
+      @font-size="setDocumentFontSize"
       @encoding="setEncoding"
       @line-ending="setLineEnding"
       @markdown-width="setMarkdownWidth"

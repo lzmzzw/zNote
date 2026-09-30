@@ -17,9 +17,10 @@
   --menu-bg: #faf9f6;
   --menu-shadow: 0 4px 12px #0000000a, 0 14px 36px #00000014;
   --font-ui: 'Segoe UI', 'zNote Sans SC', sans-serif;
-  --font-reading: 'zNote Sans SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'zNote Mono SC', 'Sarasa Mono SC', Consolas, monospace;
-  --font-size-reading: 16px;
+  --font-document: 'Cascadia Code', Consolas, 'Source Han Sans SC', 'Source Han Sans CN', '思源黑体', 'Microsoft YaHei', monospace;
+  --font-reading: var(--font-document);
+  --font-mono: var(--font-document);
+  --font-size-reading: 14px;
   --font-size-code: 14px;
   --syntax-keyword: #8b405d;
   --syntax-string: #9c4d35;
@@ -65,12 +66,5 @@
   src: url('../assets/NotoSansSC.ttf') format('truetype');
   font-style: normal;
   font-weight: 100 900;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'zNote Mono SC';
-  src: url('../assets/SarasaMonoSC-Regular.ttf') format('truetype');
-  font-style: normal;
-  font-weight: 400;
   font-display: swap;
 }

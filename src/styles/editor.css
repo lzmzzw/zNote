@@ -8,7 +8,7 @@
   outline: none;
 }
 .cm-scroller {
-  font-family: 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace !important;
+  font-family: var(--font-document) !important;
   font-size: var(--font-size-code);
   line-height: 1.95 !important;
   overflow: auto !important;
@@ -36,7 +36,7 @@
   background: var(--selection) !important;
 }
 .live-heading {
-  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-document);
   font-weight: 600;
   padding-top: 12px !important;
   padding-bottom: 8px !important;
@@ -44,7 +44,7 @@
 }
 .live-h1 {
   font-size: 27px;
-  letter-spacing: -0.6px;
+  letter-spacing: 0;
 }
 .live-h2 {
   font-size: 20px;

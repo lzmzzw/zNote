@@ -2,7 +2,7 @@
 
 个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.3**，面向 Windows x64。
 
-界面使用 Segoe UI 搭配内置 Noto Sans SC；TXT、LOG 和 Markdown 正文、预览使用 Noto Sans SC（16 px，行高 1.7），Markdown 代码块及 JSON/CSV 源码和预览使用内置 Sarasa Mono SC（14 px，行高 1.6）。YAML、TOML、XML、HTML、CSS、JS、TS、RS、SQL 虽按普通文本打开，也使用等宽字体。字体随显示格式切换，阅读与结构化内容不依赖用户额外安装字体。
+界面使用 Segoe UI 搭配内置 Noto Sans SC。所有格式的文档编辑区与预览区统一使用本机字体：英文优先 Cascadia Code，未安装时使用 Consolas；中文优先思源黑体（Source Han Sans SC / CN），未安装时使用微软雅黑。正文、代码块和行内代码默认均为 14 px，可在“帮助 → 设置 → 字体大小”中调整为 10–32 px 的整数，对所有标签即时生效并在重启后保留；Markdown 标题保留层级字号。TXT、LOG 和 Markdown 正文行高为 1.7，JSON/CSV 等结构化文本行高为 1.6。JSON 两侧操作按钮保持固定大小，始终与首行垂直居中。此设置不改变菜单等界面字号，也不改变导出文件的字体与排版。
 
 ## 首版功能
 

@@ -291,9 +291,10 @@ footer .outline-toggle:hover {
 .json-float-actions {
   position: absolute;
   z-index: 5;
-  top: 6px;
+  top: calc(6px + var(--font-size-code) * 0.8);
   right: 9px;
-  height: calc(var(--font-size-code) * 1.6);
+  transform: translateY(-50%);
+  height: 27px;
   display: flex;
   align-items: center;
   gap: 1px;

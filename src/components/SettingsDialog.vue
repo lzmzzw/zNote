@@ -5,10 +5,12 @@ import { encodingOptions, type MarkdownWidth } from '../document';
 import AppDialog from './AppDialog.vue';
 import OptionSelect from './OptionSelect.vue';
 import ThemeCheckbox from './ThemeCheckbox.vue';
+import { isDocumentFontSize, MIN_DOCUMENT_FONT_SIZE, MAX_DOCUMENT_FONT_SIZE } from '../typography';
 
 const props = defineProps<{
   kind: 'general' | 'markdown' | 'csv';
   dark: boolean;
+  fontSize: number;
   encoding?: string;
   lineEnding?: string;
   markdownWidth?: MarkdownWidth;
@@ -18,6 +20,7 @@ const emit = defineEmits<{
   close: [];
   'restore-focus': [];
   theme: [dark: boolean];
+  'font-size': [value: number];
   encoding: [value: string];
   'line-ending': [value: string];
   'markdown-width': [value: MarkdownWidth];
@@ -50,6 +53,12 @@ function setCustomDelimiter(input: HTMLInputElement) {
   if (input.value.length === 1 && !/[\r\n"]/.test(input.value)) emit('csv-options', { customDelimiter: input.value });
   else if (input.value) input.value = props.csvOptions?.customDelimiter ?? ':';
 }
+
+function setFontSize(input: HTMLInputElement) {
+  const size = input.valueAsNumber;
+  if (isDocumentFontSize(size)) emit('font-size', size);
+  else input.value = String(props.fontSize);
+}
 </script>
 
 <template>
@@ -67,6 +76,21 @@ function setCustomDelimiter(input: HTMLInputElement) {
           <button :aria-pressed="dark" @click="emit('theme', true)">Dark</button>
         </div>
       </div>
+      <label class="setting-row">
+        <span>字体大小</span>
+        <div class="font-size-setting">
+          <input
+            type="number"
+            aria-label="字体大小"
+            :min="MIN_DOCUMENT_FONT_SIZE"
+            :max="MAX_DOCUMENT_FONT_SIZE"
+            step="1"
+            :value="fontSize"
+            @change="setFontSize($event.target as HTMLInputElement)"
+          />
+          <span>px</span>
+        </div>
+      </label>
       <div class="setting-row">
         <span>保存编码</span
         ><OptionSelect

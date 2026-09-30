@@ -78,7 +78,7 @@
   background: var(--code-bg);
   padding: 2px 4px;
   border-radius: 2px;
-  font-size: 0.9em;
+  font-size: var(--font-size-code);
   font-family: var(--font-mono);
 }
 .preview .contains-task-list {
@@ -125,7 +125,7 @@
 .json-preview {
   font-size: var(--font-size-code);
   line-height: 1.6;
-  font-family: 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-family: var(--font-document);
   padding-top: 6px;
 }
 .json-preview-row {

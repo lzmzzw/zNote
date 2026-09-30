@@ -29,6 +29,7 @@ function key(value: string) { window.dispatchEvent(new KeyboardEvent('keydown', 
 function editor() { return EditorView.findFromDOM(root.querySelector('.cm-editor')!)!; }
 async function close() { await bridge.close!({ preventDefault: vi.fn() }); }
 beforeEach(() => {
+  localStorage.removeItem('znote-font-size');
   bridge.data = null; bridge.fail = false; bridge.open = null; bridge.requests = []; bridge.saveArgs = null; bridge.maximized = false; bridge.resized = undefined; bridge.destroy.mockClear();
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.stubGlobal('Worker', class {
@@ -314,6 +315,30 @@ describe('regional context menus', () => {
 afterEach(() => { unmount(); vi.unstubAllGlobals(); });
 
 describe('editor typography', () => {
+  it('changes global font size in settings and restores it after remounting', async () => {
+    await mount();
+    expect((root.querySelector('.app') as HTMLElement).style.getPropertyValue('--font-size-reading')).toBe('14px');
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-group > button')].find(button => button.textContent === '帮助')!.click();
+    await nextTick();
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.trim() === '设置')!.click();
+    await nextTick(); await nextTick();
+    const input = root.querySelector<HTMLInputElement>('input[aria-label="字体大小"]')!;
+    expect(input.value).toBe('14');
+    input.value = '20'; input.dispatchEvent(new Event('change', { bubbles: true }));
+    await nextTick();
+    const appRoot = root.querySelector('.app') as HTMLElement;
+    expect(appRoot.style.getPropertyValue('--font-size-reading')).toBe('20px');
+    expect(appRoot.style.getPropertyValue('--font-size-code')).toBe('20px');
+    expect(localStorage.getItem('znote-font-size')).toBe('20');
+    for (const value of ['', '9', '33', '14.5']) {
+      input.value = value; input.dispatchEvent(new Event('change', { bubbles: true })); await nextTick();
+      expect(input.value).toBe('20');
+      expect(localStorage.getItem('znote-font-size')).toBe('20');
+    }
+    unmount(); await mount();
+    expect((root.querySelector('.app') as HTMLElement).style.getPropertyValue('--font-size-code')).toBe('20px');
+  });
+
   it('uses reading type for prose and monospaced type for structured text', async () => {
     await mount();
     expect(root.querySelector('.writing-area')?.classList.contains('reading')).toBe(true);
