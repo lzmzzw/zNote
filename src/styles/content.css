@@ -318,6 +318,20 @@
 .csv-header-table {
   z-index: 2;
 }
+.csv-row-numbers {
+  z-index: 3;
+  table-layout: fixed;
+}
+.csv-row-number-header {
+  z-index: 4;
+}
+.csv-row-numbers th {
+  text-align: right;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  cursor: pointer;
+}
 .csv-preview tbody tr.csv-even {
   background: var(--panel);
 }

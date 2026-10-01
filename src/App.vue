@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import 'katex/dist/katex.min.css';
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
-import { EditorState, Compartment, type Text } from '@codemirror/state';
+import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -45,7 +45,7 @@ import { conversionMenuState, displayMenuState, needsSave, nextUntitledName } fr
 import { parseSession, serializeEditor, restoreEditor, type Session, type SessionNote } from './session';
 import { createPreviewSync } from './editor/preview-sync';
 import { editorAppearance, languageFor, editorPhrases } from './editor/config';
-import { editorDocumentPolicy, LARGE_LINE_LIMIT, type LargeDocumentPolicy } from './editor/large-document';
+import { displayFormatFor } from './document';
 import { decorateSearchPanel, resetSearchPanelPosition } from './editor/search-panel';
 import AppDialog from './components/AppDialog.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
@@ -252,15 +252,6 @@ const live = new Compartment();
 const editability = new Compartment();
 const wrapping = new Compartment();
 const wrappingOverrides = ref<Record<number, boolean>>({});
-const documentPolicies = new WeakMap<Text, LargeDocumentPolicy>();
-function policyFor(doc: Text) {
-  let policy = documentPolicies.get(doc);
-  if (!policy) {
-    policy = editorDocumentPolicy(doc);
-    documentPolicies.set(doc, policy);
-  }
-  return policy;
-}
 const sourceWrapping = computed(() => wrappingOverrides.value[activeId.value] ?? !large.value);
 function toggleWrapping() {
   wrappingOverrides.value = { ...wrappingOverrides.value, [activeId.value]: !sourceWrapping.value };
@@ -664,14 +655,13 @@ function onPreviewClick(event: MouseEvent) {
   });
 }
 function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor']) {
-  const policy = editorDocumentPolicy(text);
   const config = {
     doc: text,
     extensions: [
       EditorState.phrases.of(editorPhrases),
       history(),
       drawSelection(),
-      wrapping.of(policy.wrap ? EditorView.lineWrapping : []),
+      wrapping.of(text.length <= LARGE_DOCUMENT_LIMIT ? EditorView.lineWrapping : []),
       lineNumbers(),
       highlightActiveLine(),
       bracketMatching(),
@@ -679,7 +669,7 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
       search({ top: true }),
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       theme.of(editorAppearance(dark.value)),
-      language.of(languageFor(format, text.length, policy.lightweight)),
+      language.of(languageFor(format, text.length)),
       live.of(
         mode.value === 'live' && format === 'markdown' && text.length <= LARGE_DOCUMENT_LIMIT
           ? liveMarkdownBlocks(dark.value)
@@ -690,22 +680,13 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
         if (!note) return;
         note.state = u.state;
         if (u.docChanged) {
-          const before = policyFor(u.startState.doc);
-          const large = u.state.doc.length > LARGE_DOCUMENT_LIMIT;
-          let lightweight = large && before.lightweight;
-          if (large && !before.large) lightweight = policyFor(u.state.doc).lightweight;
-          else if (large && !lightweight)
-            u.changes.iterChanges((_fromA, _toA, fromB, toB) => {
-              const first = u.state.doc.lineAt(fromB).number;
-              const last = u.state.doc.lineAt(toB).number;
-              for (const line of u.state.doc.iterLines(first, last + 1))
-                if (line.length > LARGE_LINE_LIMIT) {
-                  lightweight = true;
-                  break;
-                }
-            });
-          documentPolicies.set(u.state.doc, { large, wrap: !large, lightweight, longLines: lightweight });
-          if (before.large !== large || before.lightweight !== lightweight)
+          const format = displayFormatFor(note.format, u.state.doc.length);
+          if (format !== note.format) {
+            note.format = format;
+            note.mode = 'source';
+            mode.value = 'source';
+          }
+          if (u.startState.doc.length > LARGE_DOCUMENT_LIMIT !== u.state.doc.length > LARGE_DOCUMENT_LIMIT)
             void nextTick(() => {
               if (view?.state.doc === u.state.doc) reconfigure();
             });
@@ -731,13 +712,12 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
     ],
   };
   const state = editor ? restoreEditor(editor, config) : EditorState.create(config);
-  documentPolicies.set(state.doc, policy);
   return state;
 }
 function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.map((note) => note.name))) {
   const text = doc?.text ?? '';
   const noteName = doc?.path?.split(/[\\/]/).pop() ?? name;
-  const format = formatForName(noteName);
+  const format = displayFormatFor(formatForName(noteName), text.length);
   const state = stateFor(text, format);
   const { text: _text, ...metadata } = doc ?? { text: '' };
   const note: Note = {
@@ -807,9 +787,7 @@ function reconfigure() {
   view.dispatch({
     effects: [
       theme.reconfigure(editorAppearance(dark.value)),
-      language.reconfigure(
-        languageFor(active.value.format, view.state.doc.length, policyFor(view.state.doc).lightweight),
-      ),
+      language.reconfigure(languageFor(active.value.format, view.state.doc.length)),
       wrapping.reconfigure(sourceWrapping.value ? EditorView.lineWrapping : []),
       live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? liveMarkdownBlocks(dark.value) : []),
     ],
@@ -1143,13 +1121,13 @@ function displayAs(format: Exclude<NoteFormat, 'txt'>) {
   const note = active.value;
   menu.value = null;
   if (!note || displayMenuState(note.path) !== 'enabled') return;
-  note.format = format;
+  note.format = displayFormatFor(format, note.state.doc.length);
   note.version++;
-  changeMode(defaultMode(format));
+  changeMode(defaultMode(note.format));
   touch();
   reconfigure();
   refreshDerived();
-  status.value = `显示为 ${format === 'markdown' ? 'Markdown' : format.toUpperCase()}`;
+  status.value = `显示为 ${note.format === 'markdown' ? 'Markdown' : note.format.toUpperCase()}`;
 }
 function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   const note = active.value;
@@ -1158,7 +1136,7 @@ function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   if (conversionMenuState(note.path) !== 'enabled') return;
   if (formatForName(note.name) === format && note.path === null) return;
   const wasLocalTxt = note.path !== null;
-  note.format = format;
+  note.format = displayFormatFor(format, note.state.doc.length);
   note.name = note.name.replace(/\.[^.]+$/, '') + { markdown: '.md', json: '.json', csv: '.csv' }[format];
   if (wasLocalTxt) {
     note.path = null;
@@ -1168,7 +1146,7 @@ function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   note.version++;
   note.metaDirty = true;
   note.dirty = true;
-  changeMode(defaultMode(format));
+  changeMode(defaultMode(note.format));
   touch();
   reconfigure();
   refreshDerived();
@@ -1401,6 +1379,8 @@ onMounted(async () => {
       if (session) {
         const restored = session.notes.map((doc) => ({
           ...doc,
+          format: displayFormatFor(doc.format, doc.editor.doc.length),
+          mode: displayFormatFor(doc.format, doc.editor.doc.length) !== doc.format ? ('source' as const) : doc.mode,
           id: nextId++,
           state: stateFor(doc.editor.doc, doc.format, doc.editor),
           saved: EditorState.create({ doc: doc.saved ?? doc.editor.doc }).doc.toString(),
@@ -1666,7 +1646,6 @@ onBeforeUnmount(() => {
         v-if="showOutline"
         :style="{ width: `${effectiveSidebarWidth}px` }"
         :headings="headings"
-        :paused="large"
         :current-key="currentHeadingKey"
         :collapsed="collapsedHeadings[activeId] ?? []"
         @toggle="toggleHeading"
@@ -1817,7 +1796,7 @@ onBeforeUnmount(() => {
             <ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" />
           </button>
           <span v-if="large" class="large-file-status" role="status"
-            >大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</span
+            >{{ isCsv ? '大 CSV · 后台解析' : '大文件 · TXT 显示' }}；会话上限 256 MiB。</span
           >
           <span v-if="busy" class="file-status" role="status">处理中</span>
           <div id="csv-status-slot" v-show="isCsv && mode !== 'source'"></div>

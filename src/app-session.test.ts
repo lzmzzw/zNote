@@ -126,31 +126,42 @@ beforeEach(() => {
   readText.mockClear();
 });
 describe('window controls', () => {
-  it('opens large Markdown with source syntax and optional wrapping without enabling full preview', async () => {
-    await mount();
-    await openDoc('large.md', '# Large\n\n' + 'paragraph\n'.repeat(100_001));
-    expect(editor().state.lineBreak).toBe('\n');
-    expect(editor().lineWrapping).toBe(false);
-    expect(root.querySelector('.live-rendered')).toBeNull();
-    expect(root.querySelector('footer .large-file-status')?.textContent).toContain('大文件模式');
-    const toggle = root.querySelector<HTMLButtonElement>('footer .outline-toggle')!;
-    expect(toggle).not.toBeNull();
-    const expanded = toggle.getAttribute('aria-expanded');
-    toggle.click();
-    await nextTick();
-    expect(toggle.getAttribute('aria-expanded')).not.toBe(expanded);
-    expect(root.querySelector('.writing-area')?.previousElementSibling?.classList.contains('tabs')).toBe(true);
-    root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[2].click();
-    await nextTick();
-    root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!.click();
-    await nextTick();
-    expect(root.querySelector('[role="menuitemcheckbox"]')?.getAttribute('aria-checked')).toBe('true');
-    expect(editor().contentDOM.classList.contains('cm-lineWrapping')).toBe(true);
-    expect(root.querySelector('[role="tab"][aria-label="large.md，已保存"]')).not.toBeNull();
-  });
+  it.each(['large.md', 'large.json', 'large.jsonc', 'large.geojson'])(
+    'opens %s as plain TXT and restores the fallback',
+    async (name) => {
+      await mount();
+      await openDoc(name, '# Large\n\n' + 'paragraph\n'.repeat(100_001));
+      expect(editor().state.lineBreak).toBe('\n');
+      expect(editor().lineWrapping).toBe(false);
+      expect(root.querySelector('.live-rendered')).toBeNull();
+      expect(root.querySelector('footer .large-file-status')?.textContent).toContain('TXT 显示');
+      expect(root.querySelector('footer .outline-toggle')).toBeNull();
+      expect(root.querySelector('.sidebar')).toBeNull();
+      expect(root.querySelector('.json-preview-pane')).toBeNull();
+      expect(root.querySelector('.writing-area')?.previousElementSibling?.classList.contains('tabs')).toBe(true);
+      root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[2].click();
+      await nextTick();
+      root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!.click();
+      await nextTick();
+      expect(root.querySelector('[role="menuitemcheckbox"]')?.getAttribute('aria-checked')).toBe('true');
+      expect(editor().contentDOM.classList.contains('cm-lineWrapping')).toBe(true);
+      expect(root.querySelector(`[role="tab"][aria-label="${name}，已保存"]`)).not.toBeNull();
+      await close();
+      unmount();
+      const legacy = bridge.data as { notes: { name: string; format: string; mode: string }[] };
+      const restoredNote = legacy.notes.find(note => note.name === name)!;
+      restoredNote.format = name.endsWith('.md') ? 'markdown' : 'json';
+      restoredNote.mode = name.endsWith('.md') ? 'live' : 'split';
+      await mount();
+      expect(root.querySelector('footer .large-file-status')?.textContent).toContain('TXT 显示');
+      expect(root.querySelector('.sidebar')).toBeNull();
+    },
+  );
   it('keeps a CRLF CSV clean when opened, switched and restored, but detects edits', async () => {
     await mount();
     await openDoc('windows.csv', 'name,value\r\na,1\r\n');
+    await vi.waitFor(() => expect(root.querySelector('.csv-row-numbers [aria-label="第 2 行"]')?.textContent).toContain('2'));
+    expect(root.querySelector('.csv-row-number-header [aria-label="第 1 行"]')?.textContent).toContain('1');
     expect(root.querySelector('footer .csv-status')).not.toBeNull();
     expect(root.querySelector('.csv-preview .csv-status')).toBeNull();
     expect(root.querySelector('[role="tab"][aria-label="windows.csv，已保存"]')).not.toBeNull();

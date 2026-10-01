@@ -47,13 +47,19 @@ let observer: ResizeObserver | undefined;
 let scrollTarget: number | undefined;
 let resize: { column: number; x: number; widths: number[] } | undefined;
 const rowHeight = computed(() => Math.ceil(props.fontSize * 1.7) + 16);
+const rowNumberWidth = 72;
 const bodyCount = computed(() => Math.max(0, state.value.rowCount - (props.options.firstRowHeader ? 1 : 0)));
 const bodyHeight = computed(() =>
   Math.max(1, dimensions.value.height - (props.options.firstRowHeader ? rowHeight.value : 0)),
 );
 const rows = computed(() => rowViewport(bodyCount.value, rowHeight.value, offset.value.y, bodyHeight.value));
 const columns = computed(() =>
-  columnViewport(state.value.columnCount, props.widths, offset.value.x, dimensions.value.width),
+  columnViewport(
+    state.value.columnCount,
+    props.widths,
+    offset.value.x,
+    Math.max(1, dimensions.value.width - rowNumberWidth),
+  ),
 );
 const visibleRows = computed(() =>
   (data.value?.rows ?? []).map((cells, index) => ({
@@ -71,7 +77,7 @@ const windowMatches = computed(
     data.value?.colStart === columns.value.start,
 );
 const tableStyle = computed(() => ({
-  left: `${columns.value.origin}px`,
+  left: `${columns.value.origin + rowNumberWidth}px`,
   width: `${Array.from({ length: columns.value.end - columns.value.start }, (_, index) => widthAt(columns.value.start + index)).reduce((sum, width) => sum + width, 0)}px`,
 }));
 function widthAt(column: number) {
@@ -324,7 +330,7 @@ defineExpose({ contextMenu, scrollToLine });
         class="csv-canvas"
         :style="{
           height: `${Math.max(dimensions.height, rows.extent + (options.firstRowHeader ? rowHeight : 0))}px`,
-          width: `${Math.max(dimensions.width, columns.extent)}px`,
+          width: `${Math.max(dimensions.width, columns.extent + rowNumberWidth)}px`,
         }"
       >
         <table
@@ -424,6 +430,42 @@ defineExpose({ contextMenu, scrollToLine });
               </th>
             </tr>
           </thead>
+        </table>
+        <table
+          v-if="data && windowMatches"
+          class="csv-row-numbers"
+          aria-label="CSV 行号"
+          :style="{
+            left: `${offset.x}px`,
+            top: `${rows.origin + (options.firstRowHeader ? rowHeight : 0)}px`,
+            width: `${rowNumberWidth}px`,
+            '--csv-row-height': `${rowHeight}px`,
+          }"
+        >
+          <tbody>
+            <tr v-for="row in visibleRows" :key="row.index">
+              <th scope="row" :aria-label="`第 ${row.index + 1} 行`" @click="emit('locate', row.line.start)">
+                <div class="csv-cell-value">{{ row.index + 1 }}</div>
+              </th>
+            </tr>
+          </tbody>
+        </table>
+        <table
+          v-if="options.firstRowHeader && headerCells.length"
+          class="csv-row-numbers csv-row-number-header"
+          aria-label="CSV 表头行号"
+          :style="{
+            left: `${offset.x}px`,
+            top: `${offset.y}px`,
+            width: `${rowNumberWidth}px`,
+            '--csv-row-height': `${rowHeight}px`,
+          }"
+        >
+          <tbody>
+            <tr>
+              <th scope="row" aria-label="第 1 行" @click="emit('locate', 1)"><div class="csv-cell-value">1</div></th>
+            </tr>
+          </tbody>
         </table>
       </div>
       <p v-if="state.status === 'ready' && !state.rowCount" class="csv-empty">表格为空</p>

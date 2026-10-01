@@ -44,4 +44,7 @@ export interface Note extends Omit<NativeDocument, 'text'> {
 }
 
 export const LARGE_DOCUMENT_LIMIT = 1_000_000;
+export function displayFormatFor(format: NoteFormat, size: number): NoteFormat {
+  return size > LARGE_DOCUMENT_LIMIT && (format === 'markdown' || format === 'json') ? 'txt' : format;
+}
 export const encodingOptions = ['UTF-8', 'GBK'].map((value) => ({ value, label: value }));

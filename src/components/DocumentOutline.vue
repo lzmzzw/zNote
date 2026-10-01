@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { ChevronRight, ChevronDown } from 'lucide-vue-next';
 import { visibleOutline, type OutlineNode } from '../outline';
-const props = defineProps<{ headings: OutlineNode[]; collapsed: string[]; currentKey?: string; paused?: boolean }>();
+const props = defineProps<{ headings: OutlineNode[]; collapsed: string[]; currentKey?: string }>();
 const emit = defineEmits<{ toggle: [key: string]; select: [heading: OutlineNode] }>();
 const collapsedKeys = computed(() => new Set(props.collapsed));
 const visibleHeadings = computed(() => visibleOutline(props.headings, collapsedKeys.value));
@@ -38,8 +38,7 @@ const visibleHeadings = computed(() => visibleOutline(props.headings, collapsedK
           {{ heading.title }}
         </button>
       </div>
-      <p v-if="paused" class="outline-empty">大文件大纲解析已暂停</p>
-      <p v-else-if="!headings.length" class="outline-empty">暂无标题</p>
+      <p v-if="!headings.length" class="outline-empty">暂无标题</p>
     </nav>
   </aside>
 </template>

@@ -6,7 +6,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { languages } from '@codemirror/language-data';
 import type { NoteFormat } from '../document';
-import { lightweightLanguage } from './large-document';
+import { displayFormatFor } from '../document';
 
 const codeColors = HighlightStyle.define([
   { tag: [tags.keyword, tags.operatorKeyword], color: 'var(--syntax-keyword)' },
@@ -21,14 +21,9 @@ const codeColors = HighlightStyle.define([
 export function editorAppearance(night: boolean): Extension {
   return [EditorView.theme({}, { dark: night }), syntaxHighlighting(codeColors)];
 }
-export function languageFor(format: NoteFormat, _size: number, lightweight = false): Extension {
-  return lightweight
-    ? lightweightLanguage(format)
-    : format === 'json'
-      ? json()
-      : format === 'markdown'
-        ? markdown({ codeLanguages: languages })
-        : [];
+export function languageFor(format: NoteFormat, size: number): Extension {
+  const display = displayFormatFor(format, size);
+  return display === 'json' ? json() : display === 'markdown' ? markdown({ codeLanguages: languages }) : [];
 }
 
 export const editorPhrases = {
