@@ -31,6 +31,7 @@ import {
   Settings,
   RefreshCw,
   Focus,
+  Info,
 } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
@@ -137,6 +138,11 @@ const count = ref(0);
 const toast = ref('');
 const toastError = ref(false);
 let toastTimer: ReturnType<typeof setTimeout>;
+function dismissToast() {
+  clearTimeout(toastTimer);
+  toast.value = '';
+  status.value = '准备就绪';
+}
 watch(status, (value) => {
   if (value === '准备就绪') return;
   toast.value = value;
@@ -144,7 +150,7 @@ watch(status, (value) => {
   clearTimeout(toastTimer);
   if (!toastError.value)
     toastTimer = setTimeout(() => {
-      toast.value = '';
+      dismissToast();
     }, 4000);
 });
 const preview = ref('');
@@ -255,6 +261,7 @@ const isMarkdown = computed(() => currentFormat.value === 'markdown');
 const isJson = computed(() => currentFormat.value === 'json');
 const menu = ref<'file' | 'edit' | 'format' | 'help' | null>(null);
 const settings = ref<'general' | 'markdown' | 'csv' | null>(null);
+const aboutOpen = ref(false);
 const theme = new Compartment();
 const language = new Compartment();
 const live = new Compartment();
@@ -797,8 +804,16 @@ function reconfigure() {
   });
 }
 function changeMode(value: DisplayMode) {
+  const targetNote = active.value;
   captureScroll();
-  const previousScroll = view?.scrollDOM.scrollTop ?? 0;
+  const topBlock = view?.lineBlockAtHeight(view.scrollDOM.scrollTop);
+  const topAnchor =
+    view?.posAtCoords({
+      x: view.contentDOM.getBoundingClientRect().left + 6,
+      y: view.scrollDOM.getBoundingClientRect().top + 2,
+    }) ??
+    topBlock?.from ??
+    0;
   stopCsvResize();
   const formatLiveJson =
     value === 'live' && mode.value !== 'live' && isJson.value && !large.value && !!active.value?.state.doc.length;
@@ -808,16 +823,12 @@ function changeMode(value: DisplayMode) {
   reconfigure();
   refreshDerived();
   scheduleRecovery();
-  void nextTick(() =>
-    view?.requestMeasure({
-      read: () => null,
-      write: () => {
-        if (!view) return;
-        view.scrollDOM.scrollTop = previousScroll;
-        if (value === 'split') previewSync.sourceToPreview();
-      },
-    }),
-  );
+  void nextTick(() => {
+    if (!view || active.value !== targetNote || mode.value !== value) return;
+    view.dispatch({
+      effects: EditorView.scrollIntoView(Math.min(topAnchor, view.state.doc.length), { y: 'start', yMargin: 0 }),
+    });
+  });
   if (formatLiveJson) formatJson();
 }
 function setTheme(night: boolean) {
@@ -1312,12 +1323,20 @@ function shortcuts(event: KeyboardEvent) {
     return;
   }
   if (event.key === 'Escape') {
-    if (focusMode.value && !settings.value && !menu.value && !context.value && !(view && searchPanelOpen(view.state)))
+    if (
+      focusMode.value &&
+      !settings.value &&
+      !aboutOpen.value &&
+      !menu.value &&
+      !context.value &&
+      !(view && searchPanelOpen(view.state))
+    )
       toggleFocusMode();
     menu.value = null;
     settings.value = null;
+    aboutOpen.value = false;
   }
-  if (settings.value || !(event.ctrlKey || event.metaKey)) return;
+  if (settings.value || aboutOpen.value || !(event.ctrlKey || event.metaKey)) return;
   const key = event.key.toLowerCase();
   if (key === 'enter' && event.shiftKey) {
     event.preventDefault();
@@ -1434,7 +1453,7 @@ onMounted(async () => {
       return;
     }
     if (data.error) {
-      status.value = data.error;
+      status.value = `文本转换失败：${data.error}`;
       return;
     }
     if (data.text === pending.note.state.doc.toString()) {
@@ -1604,6 +1623,15 @@ onBeforeUnmount(() => {
             ><button :disabled="checkingUpdate" @click="checkUpdates">
               <RefreshCw :size="15" />检查更新<span class="menu-version">v{{ appVersion }}</span>
             </button>
+            <hr />
+            <button
+              @click="
+                menu = null;
+                aboutOpen = true;
+              "
+            >
+              <Info :size="15" />关于 zNote
+            </button>
           </div>
         </div>
       </nav>
@@ -1618,14 +1646,17 @@ onBeforeUnmount(() => {
         <Focus :size="16" />
       </button>
       <div v-if="native" class="window-controls">
-        <button title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()"><Minus :size="16" /></button
+        <button data-tooltip="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
+          <Minus :size="16" /></button
         ><button
-          :title="maximized ? '还原' : '最大化'"
+          :data-tooltip="maximized ? '还原' : '最大化'"
           :aria-label="maximized ? '还原' : '最大化'"
           @click="toggleMaximized"
         >
           <Copy v-if="maximized" :size="13" /><Square v-else :size="13" /></button
-        ><button class="window-close" title="关闭" aria-label="关闭" @click="closeWindow"><X :size="17" /></button>
+        ><button class="window-close" data-tooltip="关闭" aria-label="关闭" @click="closeWindow">
+          <X :size="17" />
+        </button>
       </div>
     </div>
     <div class="app-body">
@@ -1832,7 +1863,7 @@ onBeforeUnmount(() => {
             class="outline-toggle"
             :style="{ width: `${gutterWidth}px` }"
             :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
-            :title="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
+            :data-tooltip="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
             :aria-expanded="!outlineCollapsed"
             @click="outlineCollapsed = !outlineCollapsed"
           >
@@ -1851,11 +1882,26 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="toast" class="status-toast" :class="{ error: toastError }" :role="toastError ? 'alert' : 'status'">
       <span>{{ toast }}</span
-      ><button class="dismiss-toast" aria-label="关闭提示" data-tooltip="关闭提示" @click="toast = ''">
+      ><button class="dismiss-toast" aria-label="关闭提示" data-tooltip="关闭提示" @click="dismissToast">
         <X :size="15" />
       </button>
     </div>
     <AppTooltip />
+    <AppDialog
+      v-if="aboutOpen"
+      title="关于 zNote"
+      panel-class="settings-modal about-modal"
+      @close="aboutOpen = false"
+      @restore-focus="view?.focus()"
+    >
+      <div class="about-brand">
+        <img src="/znote.svg" alt="" width="44" height="44" />
+        <div>
+          <strong>zNote</strong><span>版本 {{ appVersion }} · Windows x64</span>
+        </div>
+      </div>
+      <p>GNU GPL v3.0</p>
+    </AppDialog>
     <SettingsDialog
       v-if="settings"
       :kind="settings"

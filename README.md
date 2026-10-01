@@ -86,6 +86,12 @@ pwsh -NoProfile -File scripts/build.ps1
 
 推送与应用版本一致的 `vX.Y.Z` tag 会触发 `.github/workflows/release.yml`，在 GitHub Actions 构建 Windows NSIS 安装包和 updater 签名，并发布 `latest.json`。仓库 secret `TAURI_SIGNING_PRIVATE_KEY` 保存对应私钥；本地打包更新产物时需设置同名环境变量。正式更新验证须从较低版本的安装版执行“检查更新”，确认下载、安装、重启后的帮助菜单版本号。
 
+## 界面品质与桌面布局
+
+编辑内容保留 6 px 顶部和左右留白。浅深主题分别校准正文、辅助文字、语法颜色、输入控件边界和焦点；应用图标与强调色保持一致。“帮助 → 关于 zNote”显示当前安装版本与许可。
+
+Markdown 标准与紧凑宽度在 14 px 时分别约为 960 px、720 px，随正文字号成比例调整；同一宽度设置用于原位和分屏预览。模式切换按顶部文档位置恢复阅读位置。大纲字号独立于文档字号，避免放大正文后挤压导航。错误提示保留到手动关闭，成功提示短暂显示。
+
 ## 设计与验证入口
 
 - [首版设计](docs/design.md)

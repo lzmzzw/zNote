@@ -73,6 +73,8 @@ onUnmounted(() => {
         <h2>{{ title }}</h2>
         <button
           :aria-label="title === '设置' || title === 'CSV设置' ? `关闭${title}` : `关闭 ${title}`"
+          data-tooltip="关闭"
+          :disabled="busy"
           @click="emit('close')"
         >
           <X :size="18" />
