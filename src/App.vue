@@ -36,7 +36,7 @@ import {
 } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
-import { defaultCsvOptions, parseCsv, type CsvOptions } from './csv';
+import { defaultCsvOptions, type CsvOptions } from './csv';
 import { buildJsonPreview, type JsonPreviewRow } from './json-preview';
 import { compactJsonc, formatJsonc } from './format';
 import { liveMarkdownBlocks } from './live-markdown';
@@ -53,9 +53,10 @@ import DocumentTabs from './components/DocumentTabs.vue';
 import DocumentOutline from './components/DocumentOutline.vue';
 import DesktopSplitter from './components/DesktopSplitter.vue';
 import AppTooltip from './components/AppTooltip.vue';
+import CsvPreview from './components/CsvPreview.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import OptionSelect from './components/OptionSelect.vue';
-import { tabCloseTargets, spreadsheetText, type ContextMenuItem } from './context-menu';
+import { tabCloseTargets, type ContextMenuItem } from './context-menu';
 import { DEFAULT_DOCUMENT_FONT_SIZE, isDocumentFontSize, restoreDocumentFontSize } from './typography';
 
 import {
@@ -95,7 +96,7 @@ const effectiveSplitPercent = computed(() =>
   Math.max(splitMin.value, Math.min(100 - splitMin.value, splitPercent.value)),
 );
 const isSplit = computed(
-  () => mode.value === 'split' && !large.value && (isMarkdown.value || isCsv.value || isJson.value),
+  () => mode.value === 'split' && (isCsv.value || (!large.value && (isMarkdown.value || isJson.value))),
 );
 function setSidebarWidth(value: number) {
   sidebarWidth.value = value;
@@ -193,55 +194,36 @@ function goToHeading(heading: OutlineNode) {
   view?.dispatch({ selection: { anchor: heading.from }, scrollIntoView: true });
   view?.focus();
 }
-const csvRows = ref<string[][]>([]);
-const csvRowLines = ref<{ start: number; end: number }[]>([]);
-const csvError = ref<string | null>(null);
-const csvColumnCount = computed(() => csvRows.value.reduce((count, row) => Math.max(count, row.length), 0));
-const csvWidths = computed(() => {
-  const widths = notes.value.find((note) => note.id === activeId.value)?.csvColumnWidths ?? [];
-  return widths.length === csvColumnCount.value ? widths : [];
-});
-let csvResize: { note: Note; column: number; startX: number; widths: number[] } | undefined;
-function currentCsvWidths(cells: HTMLCollectionOf<HTMLTableCellElement>) {
-  return csvWidths.value.length
-    ? [...csvWidths.value]
-    : [...cells].map((cell) => Math.min(1200, Math.max(80, Math.round(cell.getBoundingClientRect().width || 160))));
-}
-function stopCsvResize() {
-  csvResize = undefined;
-  window.removeEventListener('pointermove', moveCsvResize);
-  window.removeEventListener('pointerup', stopCsvResize);
-  window.removeEventListener('pointercancel', stopCsvResize);
-}
-function moveCsvResize(event: PointerEvent) {
-  if (!csvResize) return;
-  const { note, column, startX, widths } = csvResize;
-  if (active.value !== note) return stopCsvResize();
-  note.csvColumnWidths = [...widths];
-  note.csvColumnWidths[column] = Math.max(80, Math.min(1200, Math.round(widths[column] + event.clientX - startX)));
+const csvPreview = ref<InstanceType<typeof CsvPreview>>();
+const csvDocument = computed(() => notes.value.find((note) => note.id === activeId.value)?.state.doc);
+const csvSelectedLine = computed(
+  () => csvDocument.value?.lineAt(Math.min(cursorOffset.value, csvDocument.value.length)).number ?? 1,
+);
+function setCsvWidths(widths: number[]) {
+  if (!active.value) return;
+  active.value.csvColumnWidths = widths;
   touch();
   scheduleRecovery();
 }
-function startCsvResize(event: PointerEvent, column: number) {
-  const note = active.value;
-  const cells = previewHost.value?.querySelector<HTMLTableElement>('.csv-table-wrap table')?.rows[0]?.cells;
-  if (!note || !cells || column >= cells.length) return;
-  stopCsvResize();
-  const widths = currentCsvWidths(cells);
-  csvResize = { note, column, startX: event.clientX, widths };
-  window.addEventListener('pointermove', moveCsvResize);
-  window.addEventListener('pointerup', stopCsvResize);
-  window.addEventListener('pointercancel', stopCsvResize);
+function locateCsvLine(line: number) {
+  if (active.value)
+    locateSource(
+      active.value,
+      active.value.state.doc.line(Math.max(1, Math.min(line, active.value.state.doc.lines))).from,
+    );
 }
-function nudgeCsvColumn(column: number, amount: number) {
-  const note = active.value;
-  const cells = previewHost.value?.querySelector<HTMLTableElement>('.csv-table-wrap table')?.rows[0]?.cells;
-  if (!note || !cells || column >= cells.length) return;
-  const widths = currentCsvWidths(cells);
-  widths[column] = Math.max(80, Math.min(1200, widths[column] + amount));
-  note.csvColumnWidths = widths;
-  touch();
+function onCsvScroll(top: number, line: number) {
+  if (!active.value) return;
+  active.value.previewScrollTop = top;
   scheduleRecovery();
+  if (mode.value !== 'split' || !view || restoringScroll) return;
+  const editor = view;
+  editor.requestMeasure({
+    read: () => editor.lineBlockAt(editor.state.doc.line(Math.max(1, Math.min(line, editor.state.doc.lines))).from).top,
+    write: (height) => {
+      if (view === editor && isCsv.value && mode.value === 'split') editor.scrollDOM.scrollTop = height;
+    },
+  });
 }
 const jsonRows = ref<JsonPreviewRow[]>([]);
 const jsonValid = ref(false);
@@ -273,7 +255,10 @@ const wrappingOverrides = ref<Record<number, boolean>>({});
 const documentPolicies = new WeakMap<Text, LargeDocumentPolicy>();
 function policyFor(doc: Text) {
   let policy = documentPolicies.get(doc);
-  if (!policy) { policy = editorDocumentPolicy(doc); documentPolicies.set(doc, policy); }
+  if (!policy) {
+    policy = editorDocumentPolicy(doc);
+    documentPolicies.set(doc, policy);
+  }
   return policy;
 }
 const sourceWrapping = computed(() => wrappingOverrides.value[activeId.value] ?? !large.value);
@@ -535,8 +520,7 @@ function onContextMenu(event: MouseEvent) {
   }
   const csv = target.closest('.csv-preview');
   if (csv) {
-    const cell = target.closest<HTMLTableCellElement>('td, th');
-    if (!cell) {
+    if (!csvPreview.value?.contextMenu(event)) {
       showContext(event, [
         {
           label: 'CSV 设置',
@@ -545,18 +529,7 @@ function onContextMenu(event: MouseEvent) {
           },
         },
       ]);
-      return;
     }
-    const rowIndex = [...csv.querySelectorAll('tr')].indexOf(cell.parentElement as HTMLTableRowElement);
-    const column = cell.cellIndex;
-    const rows = csvRows.value.map((row) => [...row]);
-    const source = lineRange(note, csvRowLines.value[rowIndex].start, csvRowLines.value[rowIndex].end);
-    showContext(event, [
-      { label: '复制单元格', action: () => copyText(rows[rowIndex]?.[column] ?? '') },
-      { label: '复制整行', action: () => copyText(spreadsheetText([rows[rowIndex]])) },
-      { label: '复制整列', action: () => copyText(spreadsheetText(rows.map((row) => [row[column] ?? '']))) },
-      { label: '定位到源码', action: () => locateSource(note, source.from) },
-    ]);
     return;
   }
   const jsonPreview = target.closest('.json-preview');
@@ -666,7 +639,10 @@ function onSourceScroll() {
   if (restoringScroll) return;
   captureScroll();
   scheduleRecovery();
-  if (mode.value === 'split') previewSync.sourceToPreview();
+  if (mode.value === 'split' && isCsv.value && view) {
+    const from = view.lineBlockAtHeight(view.scrollDOM.scrollTop).from;
+    void csvPreview.value?.scrollToLine(view.state.doc.lineAt(from).number);
+  } else if (mode.value === 'split') previewSync.sourceToPreview();
 }
 function onPreviewScroll() {
   if (restoringScroll) return;
@@ -718,15 +694,21 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
           const large = u.state.doc.length > LARGE_DOCUMENT_LIMIT;
           let lightweight = large && before.lightweight;
           if (large && !before.large) lightweight = policyFor(u.state.doc).lightweight;
-          else if (large && !lightweight) u.changes.iterChanges((_fromA, _toA, fromB, toB) => {
-            const first = u.state.doc.lineAt(fromB).number;
-            const last = u.state.doc.lineAt(toB).number;
-            for (const line of u.state.doc.iterLines(first, last + 1)) if (line.length > LARGE_LINE_LIMIT) { lightweight = true; break; }
-          });
+          else if (large && !lightweight)
+            u.changes.iterChanges((_fromA, _toA, fromB, toB) => {
+              const first = u.state.doc.lineAt(fromB).number;
+              const last = u.state.doc.lineAt(toB).number;
+              for (const line of u.state.doc.iterLines(first, last + 1))
+                if (line.length > LARGE_LINE_LIMIT) {
+                  lightweight = true;
+                  break;
+                }
+            });
           documentPolicies.set(u.state.doc, { large, wrap: !large, lightweight, longLines: lightweight });
-          if (before.large !== large || before.lightweight !== lightweight) void nextTick(() => {
-            if (view?.state.doc === u.state.doc) reconfigure();
-          });
+          if (before.large !== large || before.lightweight !== lightweight)
+            void nextTick(() => {
+              if (view?.state.doc === u.state.doc) reconfigure();
+            });
           note.version++;
           note.dirty = true;
           touch();
@@ -787,7 +769,6 @@ function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.ma
   return note;
 }
 function selectNote(note: Note) {
-  stopCsvResize();
   if (view && active.value && active.value !== note) {
     active.value.state = view.state;
     captureScroll();
@@ -817,11 +798,7 @@ function selectNote(note: Note) {
         restoringScroll = false;
       },
     });
-    if (
-      !(isCsv.value && mode.value === 'live' && !large.value) &&
-      document.activeElement?.getAttribute('role') !== 'tab'
-    )
-      view.focus();
+    if (!(isCsv.value && mode.value === 'live') && document.activeElement?.getAttribute('role') !== 'tab') view.focus();
   });
   scheduleRecovery();
 }
@@ -830,7 +807,9 @@ function reconfigure() {
   view.dispatch({
     effects: [
       theme.reconfigure(editorAppearance(dark.value)),
-      language.reconfigure(languageFor(active.value.format, view.state.doc.length, policyFor(view.state.doc).lightweight)),
+      language.reconfigure(
+        languageFor(active.value.format, view.state.doc.length, policyFor(view.state.doc).lightweight),
+      ),
       wrapping.reconfigure(sourceWrapping.value ? EditorView.lineWrapping : []),
       live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? liveMarkdownBlocks(dark.value) : []),
     ],
@@ -847,7 +826,6 @@ function changeMode(value: DisplayMode) {
     }) ??
     topBlock?.from ??
     0;
-  stopCsvResize();
   const formatLiveJson =
     value === 'live' && mode.value !== 'live' && isJson.value && !large.value && !!active.value?.state.doc.length;
   mode.value = value;
@@ -881,12 +859,9 @@ function refreshDerived() {
   if (doc.length > LARGE_DOCUMENT_LIMIT) {
     headings.value = [];
     preview.value = '';
-    csvRows.value = [];
-    csvRowLines.value = [];
     jsonRows.value = [];
     jsonValid.value = false;
     jsonPreviewText.value = '';
-    csvError.value = null;
     reconfigure();
     return;
   }
@@ -900,12 +875,7 @@ function refreshDerived() {
       )
     : [];
   if (mode.value === 'split' || (mode.value === 'live' && isCsv.value)) {
-    if (isCsv.value) {
-      const parsed = parseCsv(text, active.value.csvOptions);
-      csvRows.value = parsed.rows;
-      csvRowLines.value = parsed.rowLines;
-      csvError.value = parsed.error;
-    } else if (isMarkdown.value) preview.value = renderMarkdown(text);
+    if (isMarkdown.value) preview.value = renderMarkdown(text);
     else if (isJson.value) {
       const strict = !/\.jsonc$/i.test(active.value.name);
       const result = buildJsonPreview(text, strict);
@@ -1524,7 +1494,6 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
-  stopCsvResize();
   gutterObserver?.disconnect();
   view?.scrollDOM.removeEventListener('scroll', onSourceScroll);
   view?.destroy();
@@ -1614,7 +1583,9 @@ onBeforeUnmount(() => {
         <div class="menu-group">
           <button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button>
           <div v-if="menu === 'format'" class="menu-popup">
-            <button role="menuitemcheckbox" :aria-checked="sourceWrapping" @click="toggleWrapping"><WrapText :size="15" />自动折行</button>
+            <button role="menuitemcheckbox" :aria-checked="sourceWrapping" @click="toggleWrapping">
+              <WrapText :size="15" />自动折行
+            </button>
             <hr />
             <button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('markdown')">显示为 Markdown</button
             ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('csv')">显示为 CSV</button
@@ -1635,7 +1606,7 @@ onBeforeUnmount(() => {
             >
               <Settings :size="15" />Markdown 设置</button
             ><button
-              :disabled="!isCsv || busy || large"
+              :disabled="!isCsv || busy"
               @click="
                 menu = null;
                 settings = 'csv';
@@ -1683,10 +1654,7 @@ onBeforeUnmount(() => {
       <div v-if="native" class="window-controls">
         <button aria-label="最小化" @click="getCurrentWindow().minimize()">
           <Minus :size="16" /></button
-        ><button
-          :aria-label="maximized ? '还原' : '最大化'"
-          @click="toggleMaximized"
-        >
+        ><button :aria-label="maximized ? '还原' : '最大化'" @click="toggleMaximized">
           <Copy v-if="maximized" :size="13" /><Square v-else :size="13" /></button
         ><button class="window-close" aria-label="关闭" @click="closeWindow">
           <X :size="17" />
@@ -1722,13 +1690,12 @@ onBeforeUnmount(() => {
           @create="newNote"
           @mode="changeMode"
         />
-        <div v-if="large" class="notice">大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</div>
         <div
           class="writing-area"
           :style="{ '--source-width': `${effectiveSplitPercent}%` }"
           :class="[
             {
-              split: mode === 'split' && !large && (isMarkdown || isCsv || isJson),
+              split: isSplit,
               live: mode === 'live' && isMarkdown,
               reading: (currentFormat === 'txt' && !isStructuredText) || isMarkdown,
               structured: isJson || isCsv || isStructuredText,
@@ -1739,7 +1706,7 @@ onBeforeUnmount(() => {
           <div
             class="source-pane"
             :class="{ 'json-source-pane': mode === 'split' && !large && isJson }"
-            v-show="!(mode === 'live' && isCsv && !large)"
+            v-show="!(mode === 'live' && isCsv)"
           >
             <div v-if="mode === 'split' && !large && isJson" class="json-float-actions" aria-label="JSON 源码操作">
               <button title="将整份源码转为 JSON 字符串" :disabled="busy || !count" @click="transformJson('escape')">
@@ -1817,80 +1784,30 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </div>
-          <section
-            v-if="mode !== 'source' && !large && isCsv"
-            ref="previewHost"
-            class="preview csv-preview"
+          <CsvPreview
+            v-if="mode !== 'source' && isCsv && active && csvDocument"
+            :key="activeId"
+            ref="csvPreview"
+            :document-id="activeId"
+            :doc="csvDocument"
+            :options="active.csvOptions"
+            :widths="active.csvColumnWidths"
+            :font-size="documentFontSize"
+            :selected-line="csvSelectedLine"
+            :scroll-top="active.previewScrollTop"
             :style="mode === 'live' ? { borderLeft: 'none' } : undefined"
-            aria-label="CSV 表格预览"
-            @scroll="onPreviewScroll"
-            @click="onPreviewClick"
-          >
-            <p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p>
-            <div v-if="csvRows.length" class="csv-table-wrap">
-              <table
-                :class="{ 'csv-resized': csvWidths.length }"
-                :style="
-                  csvWidths.length
-                    ? { width: `${csvWidths.reduce((sum, width) => sum + width, 0)}px`, minWidth: '0' }
-                    : undefined
-                "
-              >
-                <colgroup>
-                  <col
-                    v-for="index in csvColumnCount"
-                    :key="index"
-                    :style="csvWidths[index - 1] ? { width: `${csvWidths[index - 1]}px` } : undefined"
-                  />
-                </colgroup>
-                <thead v-if="active?.csvOptions.firstRowHeader">
-                  <tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end">
-                    <th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">
-                      {{ cell
-                      }}<span
-                        class="csv-resize-handle"
-                        role="separator"
-                        aria-orientation="vertical"
-                        tabindex="0"
-                        :aria-label="`调整第 ${index + 1} 列宽度`"
-                        @pointerdown.stop.prevent="startCsvResize($event, index)"
-                        @keydown.left.stop.prevent="nudgeCsvColumn(index, -16)"
-                        @keydown.right.stop.prevent="nudgeCsvColumn(index, 16)"
-                        @click.stop
-                      ></span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(row, rowIndex) in csvRows.slice(active?.csvOptions.firstRowHeader ? 1 : 0)"
-                    :key="rowIndex"
-                    :data-source-start="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.start"
-                    :data-source-end="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.end"
-                  >
-                    <td v-for="(cell, cellIndex) in row" :key="cellIndex">
-                      {{ cell
-                      }}<span
-                        v-if="!active?.csvOptions.firstRowHeader && rowIndex === 0"
-                        class="csv-resize-handle"
-                        role="separator"
-                        aria-orientation="vertical"
-                        tabindex="0"
-                        :aria-label="`调整第 ${cellIndex + 1} 列宽度`"
-                        @pointerdown.stop.prevent="startCsvResize($event, cellIndex)"
-                        @keydown.left.stop.prevent="nudgeCsvColumn(cellIndex, -16)"
-                        @keydown.right.stop.prevent="nudgeCsvColumn(cellIndex, 16)"
-                        @click.stop
-                      ></span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else class="csv-empty">表格为空</p>
-          </section>
+            @widths="setCsvWidths"
+            @locate="locateCsvLine"
+            @scroll="onCsvScroll"
+            @context="showContext"
+            @copy="copyText"
+            @error="status = $event"
+          />
         </div>
         <footer>
+          <span v-if="large" class="large-file-status" role="status"
+            >大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</span
+          >
           <span v-if="busy" class="file-status" role="status">处理中</span>
           <button
             v-if="isMarkdown && !large && !focusMode"

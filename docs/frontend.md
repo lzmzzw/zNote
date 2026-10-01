@@ -19,6 +19,8 @@ zNote 使用 Vue 3 组织窗口界面，CodeMirror 6 保存正文、选区和撤
 
 CSV、JSON、文件命名和格式化等小模块继续按各自业务职责独立。原生命令与权限仍由 Tauri 层拥有。
 
+CSV 由 `csv.worker.ts` 承载 Papa Parse 与 `csv-engine.ts` 的记录偏移及源码行索引，`csv-client.ts` 校验任务身份并在取消时终止 Worker。`CsvPreview.vue` 仅请求可见行列窗口，`csv-viewport.ts` 将超长滚动范围映射到逻辑记录。修改文档或解析选项后废弃旧任务并延迟重启；复制使用完整字段，显示窗口限制字段长度。自定义列宽的前缀位置按数组身份缓存，超过 100,000 列关闭调宽以避免大数组分配。
+
 ## 样式归属
 
 `src/style.css` 仅作为导入入口；`src/styles/` 按以下顺序组织：

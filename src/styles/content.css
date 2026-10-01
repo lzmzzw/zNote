@@ -208,15 +208,59 @@
 }
 /* CSV 表格预览 */
 .csv-preview {
-  padding: 20px 24px 80px;
+  padding: 0;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.csv-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  flex: none;
+}
+.csv-status form {
+  margin-left: auto;
+}
+.csv-status input {
+  width: 82px;
+  height: 24px;
+  padding: 2px 4px;
+  border: 1px solid var(--control-border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.csv-status button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+}
+.csv-status button:hover {
+  background: var(--selected);
+  color: var(--accent);
 }
 .csv-table-wrap {
   width: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+  position: relative;
+}
+.csv-canvas {
+  position: relative;
 }
 .csv-preview table {
-  width: max-content;
-  min-width: 100%;
+  margin: 0;
+  position: absolute;
+  min-width: 0;
   border-collapse: separate;
   border-spacing: 0;
   font-family: var(--font-mono);
@@ -225,16 +269,23 @@
 }
 .csv-preview th,
 .csv-preview td {
+  box-sizing: border-box;
   position: relative;
-  min-width: 100px;
-  max-width: 360px;
-  padding: 8px 12px;
+  height: var(--csv-row-height);
+  padding: 0 12px;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   text-align: left;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  vertical-align: top;
+  white-space: pre;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.csv-cell-value {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: calc(var(--csv-row-height) - 1px);
+  line-height: calc(var(--csv-row-height) - 1px);
 }
 .csv-preview table.csv-resized {
   table-layout: fixed;
@@ -260,21 +311,30 @@
   outline: none;
 }
 .csv-preview th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  position: relative;
   background: var(--panel);
   color: var(--text);
   font-weight: 600;
 }
-.csv-preview tbody tr:nth-child(even) {
+.csv-header-table {
+  z-index: 2;
+}
+.csv-preview tbody tr.csv-even {
   background: var(--panel);
 }
 .csv-error {
   color: var(--danger);
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  max-height: 72px;
+  overflow: auto;
 }
 .csv-empty {
   color: var(--muted);
+  position: absolute;
+  top: 10px;
+  left: 16px;
 }
 /* 原位 Markdown 与图表 */
 .live-rendered.preview {

@@ -330,10 +330,16 @@ footer .outline-toggle:hover {
   color: var(--accent);
   background: var(--selected);
 }
-.notice {
-  padding: 7px 30px;
-  background: var(--selected);
+.large-file-status {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
+}
+footer > :not(.large-file-status) {
+  flex-shrink: 0;
 }
 footer {
   height: 32px;
