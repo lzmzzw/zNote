@@ -5,7 +5,8 @@ import { tags } from '@lezer/highlight';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { languages } from '@codemirror/language-data';
-import { LARGE_DOCUMENT_LIMIT, type NoteFormat } from '../document';
+import type { NoteFormat } from '../document';
+import { lightweightLanguage } from './large-document';
 
 const codeColors = HighlightStyle.define([
   { tag: [tags.keyword, tags.operatorKeyword], color: 'var(--syntax-keyword)' },
@@ -20,9 +21,9 @@ const codeColors = HighlightStyle.define([
 export function editorAppearance(night: boolean): Extension {
   return [EditorView.theme({}, { dark: night }), syntaxHighlighting(codeColors)];
 }
-export function languageFor(format: NoteFormat, size: number): Extension {
-  return size > LARGE_DOCUMENT_LIMIT
-    ? []
+export function languageFor(format: NoteFormat, _size: number, lightweight = false): Extension {
+  return lightweight
+    ? lightweightLanguage(format)
     : format === 'json'
       ? json()
       : format === 'markdown'

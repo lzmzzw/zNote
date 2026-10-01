@@ -49,6 +49,17 @@ beforeEach(() => {
   writeText.mockClear(); readText.mockClear();
 });
 describe('window controls', () => {
+  it('opens large Markdown with source syntax and optional wrapping without enabling full preview', async () => {
+    await mount(); await openDoc('large.md', '# Large\n\n' + 'paragraph\n'.repeat(100_001));
+    expect(editor().state.lineBreak).toBe('\n');
+    expect(editor().lineWrapping).toBe(false);
+    expect(root.querySelector('.live-rendered')).toBeNull();
+    root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[2].click(); await nextTick();
+    root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!.click(); await nextTick();
+    expect(root.querySelector('[role="menuitemcheckbox"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(editor().contentDOM.classList.contains('cm-lineWrapping')).toBe(true);
+    expect(root.querySelector('[role="tab"][aria-label="large.md，已保存"]')).not.toBeNull();
+  });
   it('keeps a CRLF CSV clean when opened, switched and restored, but detects edits', async () => {
     await mount(); await openDoc('windows.csv', 'name,value\r\na,1\r\n');
     expect(root.querySelector('[role="tab"][aria-label="windows.csv，已保存"]')).not.toBeNull();

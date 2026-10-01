@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import 'katex/dist/katex.min.css';
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
-import { EditorState, Compartment } from '@codemirror/state';
+import { EditorState, Compartment, type Text } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -32,6 +32,7 @@ import {
   RefreshCw,
   Focus,
   Info,
+  WrapText,
 } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
@@ -44,6 +45,7 @@ import { conversionMenuState, displayMenuState, needsSave, nextUntitledName } fr
 import { parseSession, serializeEditor, restoreEditor, type Session, type SessionNote } from './session';
 import { createPreviewSync } from './editor/preview-sync';
 import { editorAppearance, languageFor, editorPhrases } from './editor/config';
+import { editorDocumentPolicy, LARGE_LINE_LIMIT, type LargeDocumentPolicy } from './editor/large-document';
 import { decorateSearchPanel, resetSearchPanelPosition } from './editor/search-panel';
 import AppDialog from './components/AppDialog.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
@@ -266,6 +268,19 @@ const theme = new Compartment();
 const language = new Compartment();
 const live = new Compartment();
 const editability = new Compartment();
+const wrapping = new Compartment();
+const wrappingOverrides = ref<Record<number, boolean>>({});
+const documentPolicies = new WeakMap<Text, LargeDocumentPolicy>();
+function policyFor(doc: Text) {
+  let policy = documentPolicies.get(doc);
+  if (!policy) { policy = editorDocumentPolicy(doc); documentPolicies.set(doc, policy); }
+  return policy;
+}
+const sourceWrapping = computed(() => wrappingOverrides.value[activeId.value] ?? !large.value);
+function toggleWrapping() {
+  wrappingOverrides.value = { ...wrappingOverrides.value, [activeId.value]: !sourceWrapping.value };
+  reconfigure();
+}
 const large = computed(
   () => (notes.value.find((note) => note.id === activeId.value)?.state.doc.length ?? 0) > LARGE_DOCUMENT_LIMIT,
 );
@@ -673,13 +688,14 @@ function onPreviewClick(event: MouseEvent) {
   });
 }
 function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor']) {
+  const policy = editorDocumentPolicy(text);
   const config = {
     doc: text,
     extensions: [
       EditorState.phrases.of(editorPhrases),
       history(),
       drawSelection(),
-      EditorView.lineWrapping,
+      wrapping.of(policy.wrap ? EditorView.lineWrapping : []),
       lineNumbers(),
       highlightActiveLine(),
       bracketMatching(),
@@ -687,7 +703,7 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
       search({ top: true }),
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       theme.of(editorAppearance(dark.value)),
-      language.of(languageFor(format, text.length)),
+      language.of(languageFor(format, text.length, policy.lightweight)),
       live.of(
         mode.value === 'live' && format === 'markdown' && text.length <= LARGE_DOCUMENT_LIMIT
           ? liveMarkdownBlocks(dark.value)
@@ -698,6 +714,19 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
         if (!note) return;
         note.state = u.state;
         if (u.docChanged) {
+          const before = policyFor(u.startState.doc);
+          const large = u.state.doc.length > LARGE_DOCUMENT_LIMIT;
+          let lightweight = large && before.lightweight;
+          if (large && !before.large) lightweight = policyFor(u.state.doc).lightweight;
+          else if (large && !lightweight) u.changes.iterChanges((_fromA, _toA, fromB, toB) => {
+            const first = u.state.doc.lineAt(fromB).number;
+            const last = u.state.doc.lineAt(toB).number;
+            for (const line of u.state.doc.iterLines(first, last + 1)) if (line.length > LARGE_LINE_LIMIT) { lightweight = true; break; }
+          });
+          documentPolicies.set(u.state.doc, { large, wrap: !large, lightweight, longLines: lightweight });
+          if (before.large !== large || before.lightweight !== lightweight) void nextTick(() => {
+            if (view?.state.doc === u.state.doc) reconfigure();
+          });
           note.version++;
           note.dirty = true;
           touch();
@@ -719,7 +748,9 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
       editability.of([]),
     ],
   };
-  return editor ? restoreEditor(editor, config) : EditorState.create(config);
+  const state = editor ? restoreEditor(editor, config) : EditorState.create(config);
+  documentPolicies.set(state.doc, policy);
+  return state;
 }
 function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.map((note) => note.name))) {
   const text = doc?.text ?? '';
@@ -799,7 +830,8 @@ function reconfigure() {
   view.dispatch({
     effects: [
       theme.reconfigure(editorAppearance(dark.value)),
-      language.reconfigure(languageFor(active.value.format, view.state.doc.length)),
+      language.reconfigure(languageFor(active.value.format, view.state.doc.length, policyFor(view.state.doc).lightweight)),
+      wrapping.reconfigure(sourceWrapping.value ? EditorView.lineWrapping : []),
       live.reconfigure(mode.value === 'live' && !large.value && isMarkdown.value ? liveMarkdownBlocks(dark.value) : []),
     ],
   });
@@ -843,6 +875,9 @@ function refreshDerived() {
   const doc = active.value.state.doc;
   count.value = doc.length;
   previewSync.invalidate();
+  const text = doc.toString();
+  active.value.dirty = active.value.metaDirty || text !== active.value.saved;
+  touch();
   if (doc.length > LARGE_DOCUMENT_LIMIT) {
     headings.value = [];
     preview.value = '';
@@ -855,9 +890,6 @@ function refreshDerived() {
     reconfigure();
     return;
   }
-  const text = doc.toString();
-  active.value.dirty = active.value.metaDirty || text !== active.value.saved;
-  touch();
   headings.value = isMarkdown.value
     ? buildOutline(
         markdownHeadings(text).map((item) => ({
@@ -1582,6 +1614,8 @@ onBeforeUnmount(() => {
         <div class="menu-group">
           <button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button>
           <div v-if="menu === 'format'" class="menu-popup">
+            <button role="menuitemcheckbox" :aria-checked="sourceWrapping" @click="toggleWrapping"><WrapText :size="15" />自动折行</button>
+            <hr />
             <button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('markdown')">显示为 Markdown</button
             ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('csv')">显示为 CSV</button
             ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('json')">显示为 JSON</button>
@@ -1688,7 +1722,7 @@ onBeforeUnmount(() => {
           @create="newNote"
           @mode="changeMode"
         />
-        <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；会话上限 256 MiB。</div>
+        <div v-if="large" class="notice">大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</div>
         <div
           class="writing-area"
           :style="{ '--source-width': `${effectiveSplitPercent}%` }"
