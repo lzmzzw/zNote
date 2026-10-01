@@ -49,6 +49,15 @@ beforeEach(() => {
   writeText.mockClear(); readText.mockClear();
 });
 describe('window controls', () => {
+  it('shows a single close control without an automatic close tooltip in About', async () => {
+    await mount();
+    root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click(); await nextTick();
+    [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find(button => button.textContent?.includes('关于 zNote'))!.click();
+    await nextTick(); await nextTick();
+    expect(root.querySelectorAll('[role="dialog"] button')).toHaveLength(1);
+    expect(root.querySelector('[role="tooltip"]')).toBeNull();
+    expect(root.querySelector('[role="dialog"] button')?.getAttribute('aria-label')).toBe('关闭 关于 zNote');
+  });
   it('keeps keyboard tab navigation focused and marks the current outline heading', async () => {
     await mount(); await openDoc('note.md', '# First\n\ntext\n\n## Second\n\nlast');
     editor().dispatch({ selection: { anchor: 28 } }); await nextTick();
