@@ -17,7 +17,7 @@ const bridge = vi.hoisted(() => ({
   maximized: false,
   resized: undefined as undefined | (() => void),
 }));
-const updater = vi.hoisted(() => ({ check: vi.fn(), downloadAndInstall: vi.fn(), relaunch: vi.fn() }));
+const updater = vi.hoisted(() => ({ check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn(), relaunch: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => true,
   invoke: vi.fn(async (command: string, args?: { data?: unknown }) => {
@@ -250,9 +250,70 @@ describe('window controls', () => {
   });
 });
 describe('software updates', () => {
+  beforeEach(() => {
+    Object.values(updater).forEach((mock) => mock.mockReset());
+    updater.close.mockResolvedValue(undefined);
+  });
+  it('shows cumulative progress, permits editing and retries after a download failure', async () => {
+    let progress!: (event: import('@tauri-apps/plugin-updater').DownloadEvent) => void;
+    let failDownload!: (reason: Error) => void;
+    updater.check.mockResolvedValue({
+      version: '0.1.3',
+      download: updater.download,
+      install: updater.install,
+      close: updater.close,
+    });
+    updater.download.mockImplementation((callback) => {
+      progress = callback;
+      return new Promise<void>((_, reject) => {
+        failDownload = reject;
+      });
+    });
+    await mount();
+    root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click();
+    await nextTick();
+    const button = [...root.querySelectorAll<HTMLButtonElement>('.menu-popup button')].find((entry) =>
+      entry.textContent?.includes('检查更新'),
+    )!;
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    progress({ event: 'Started', data: { contentLength: 1000 } });
+    progress({ event: 'Progress', data: { chunkLength: 200 } });
+    progress({ event: 'Progress', data: { chunkLength: 150 } });
+    await nextTick();
+    expect(button.textContent).toContain('35%');
+    expect(button.disabled).toBe(true);
+    expect(root.querySelector('.menu-popup')).not.toBeNull();
+    expect(editor().state.facet(EditorView.editable)).toBe(true);
+    editor().dispatch({ changes: { from: 0, insert: 'download in background' } });
+    expect(editor().state.doc.toString()).toContain('download in background');
+    expect(updater.install).not.toHaveBeenCalled();
+    progress({ event: 'Started', data: {} });
+    await nextTick();
+    expect(button.textContent).toContain('下载中…');
+    failDownload(new Error('network interrupted'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTick();
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain('v0.1.2');
+    expect(root.textContent).toContain('下载更新失败');
+    expect(updater.close).toHaveBeenCalled();
+    updater.check.mockResolvedValue(null);
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    expect(updater.install).not.toHaveBeenCalled();
+  });
   it('checks, installs and relaunches from the Help menu', async () => {
-    updater.check.mockResolvedValue({ version: '0.1.3', downloadAndInstall: updater.downloadAndInstall });
-    updater.downloadAndInstall.mockResolvedValue(undefined);
+    updater.check.mockResolvedValue({
+      version: '0.1.3',
+      download: updater.download,
+      install: updater.install,
+      close: updater.close,
+    });
+    updater.download.mockResolvedValue(undefined);
+    updater.install.mockResolvedValue(undefined);
+    updater.close.mockResolvedValue(undefined);
     updater.relaunch.mockResolvedValue(undefined);
     await mount();
     root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click();
@@ -265,7 +326,8 @@ describe('software updates', () => {
     updateButton.click();
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(updater.check).toHaveBeenCalled();
-    expect(updater.downloadAndInstall).toHaveBeenCalled();
+    expect(updater.download).toHaveBeenCalled();
+    expect(updater.install).toHaveBeenCalled();
     expect(updater.relaunch).toHaveBeenCalled();
   });
 });

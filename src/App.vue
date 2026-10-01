@@ -11,7 +11,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import packageJson from '../package.json';
-import { check } from '@tauri-apps/plugin-updater';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { listen } from '@tauri-apps/api/event';
 import {
@@ -138,6 +138,8 @@ function setDocumentFontSize(value: number) {
 const status = ref('准备就绪');
 const appVersion = ref(packageJson.version);
 const checkingUpdate = ref(false);
+const updateProgress = ref<number | null>(null);
+const downloadingUpdate = ref(false);
 const busy = ref(false);
 const position = ref('行 1，列 1');
 const count = ref(0);
@@ -1181,33 +1183,55 @@ async function clipboardAction(action: 'copy' | 'cut' | 'paste') {
   await editorClipboard(action, active.value);
 }
 async function checkUpdates() {
-  menu.value = null;
-  if (checkingUpdate.value) return;
+  if (checkingUpdate.value || busy.value || closingWindow.value) return;
   if (!native) {
     status.value = '请在安装版中检查更新';
     return;
   }
   checkingUpdate.value = true;
+  updateProgress.value = null;
   status.value = '正在检查更新…';
+  let update: Update | null = null;
+  let installing = false;
   try {
-    const update = await check({ timeout: 30000 });
+    update = await check({ timeout: 30000 });
     if (!update) {
       status.value = `当前已是最新版本 (${appVersion.value})`;
       return;
     }
-    busy.value = true;
-    if (!(await persistRecovery())) return;
-    status.value = `正在下载版本 ${update.version}…`;
-    await update.downloadAndInstall((event) => {
-      if (event.event === 'Started') status.value = `正在下载版本 ${update.version}…`;
-      if (event.event === 'Finished') status.value = '更新已安装，正在重启…';
+    downloadingUpdate.value = true;
+    updateProgress.value = 0;
+    let downloaded = 0;
+    let total = 0;
+    status.value = `正在后台下载版本 ${update.version}…`;
+    await update.download((event) => {
+      if (event.event === 'Started') {
+        downloaded = 0;
+        total = event.data.contentLength ?? 0;
+        updateProgress.value = total > 0 ? 0 : null;
+      } else if (event.event === 'Progress') {
+        downloaded += event.data.chunkLength;
+        if (total > 0) updateProgress.value = Math.min(99, Math.floor((downloaded / total) * 100));
+      } else if (event.event === 'Finished') {
+        updateProgress.value = 100;
+      }
     });
+    updateProgress.value = 100;
+    // 下载期间允许继续编辑，安装前才冻结编辑并保存最新会话。
+    busy.value = true;
+    installing = true;
+    if (!(await persistRecovery())) return;
+    status.value = '下载完成，正在安装并重启…';
+    await update.install();
     await relaunch();
   } catch (error) {
-    status.value = `检查更新失败：${error}`;
+    status.value = `${installing ? '安装更新' : downloadingUpdate.value ? '下载更新' : '检查更新'}失败：${error}`;
   } finally {
-    busy.value = false;
+    if (installing) busy.value = false;
+    downloadingUpdate.value = false;
+    updateProgress.value = null;
     checkingUpdate.value = false;
+    if (update) await update.close().catch(() => {});
   }
 }
 function closeWindow() {
@@ -1609,8 +1633,16 @@ onBeforeUnmount(() => {
               "
             >
               <Settings :size="15" />设置</button
-            ><button :disabled="checkingUpdate" @click="checkUpdates">
-              <RefreshCw :size="15" />检查更新<span class="menu-version">v{{ appVersion }}</span>
+            ><button :disabled="checkingUpdate || busy" @click="checkUpdates">
+              <RefreshCw :size="15" />检查更新<span class="menu-version" aria-live="polite">{{
+                downloadingUpdate
+                  ? updateProgress === null
+                    ? '下载中…'
+                    : `${updateProgress}%`
+                  : checkingUpdate
+                    ? '检查中…'
+                    : `v${appVersion}`
+              }}</span>
             </button>
             <hr />
             <button
