@@ -87,7 +87,7 @@ const sidebarWidth = ref(246);
 const splitPercent = ref(50);
 const sidebarMax = computed(() => Math.max(160, Math.min(360, windowWidth.value - 560)));
 const effectiveSidebarWidth = computed(() => Math.min(sidebarWidth.value, sidebarMax.value));
-const showOutline = computed(() => isMarkdown.value && !large.value && !outlineCollapsed.value && !focusMode.value);
+const showOutline = computed(() => isMarkdown.value && !outlineCollapsed.value && !focusMode.value);
 const writingWidth = computed(() =>
   Math.max(320, windowWidth.value - (showOutline.value ? effectiveSidebarWidth.value + 6 : 0)),
 );
@@ -1666,6 +1666,7 @@ onBeforeUnmount(() => {
         v-if="showOutline"
         :style="{ width: `${effectiveSidebarWidth}px` }"
         :headings="headings"
+        :paused="large"
         :current-key="currentHeadingKey"
         :collapsed="collapsedHeadings[activeId] ?? []"
         @toggle="toggleHeading"
@@ -1805,12 +1806,8 @@ onBeforeUnmount(() => {
           />
         </div>
         <footer>
-          <span v-if="large" class="large-file-status" role="status"
-            >大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</span
-          >
-          <span v-if="busy" class="file-status" role="status">处理中</span>
           <button
-            v-if="isMarkdown && !large && !focusMode"
+            v-if="isMarkdown && !focusMode"
             class="outline-toggle"
             :style="{ width: `${gutterWidth}px` }"
             :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
@@ -1818,7 +1815,12 @@ onBeforeUnmount(() => {
             @click="outlineCollapsed = !outlineCollapsed"
           >
             <ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" /></button
-          ><span>{{ position }}</span
+          >
+          <span v-if="large" class="large-file-status" role="status"
+            >大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</span
+          >
+          <span v-if="busy" class="file-status" role="status">处理中</span>
+          <span>{{ position }}</span
           ><span>{{ count.toLocaleString() }} 字符</span
           ><OptionSelect
             label="保存编码"

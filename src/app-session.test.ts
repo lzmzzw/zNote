@@ -133,6 +133,12 @@ describe('window controls', () => {
     expect(editor().lineWrapping).toBe(false);
     expect(root.querySelector('.live-rendered')).toBeNull();
     expect(root.querySelector('footer .large-file-status')?.textContent).toContain('大文件模式');
+    const toggle = root.querySelector<HTMLButtonElement>('footer .outline-toggle')!;
+    expect(toggle).not.toBeNull();
+    const expanded = toggle.getAttribute('aria-expanded');
+    toggle.click();
+    await nextTick();
+    expect(toggle.getAttribute('aria-expanded')).not.toBe(expanded);
     expect(root.querySelector('.writing-area')?.previousElementSibling?.classList.contains('tabs')).toBe(true);
     root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[2].click();
     await nextTick();

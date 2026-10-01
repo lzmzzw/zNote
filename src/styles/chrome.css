@@ -138,6 +138,9 @@ footer .outline-toggle {
 footer .outline-toggle:hover {
   color: var(--accent);
 }
+footer:has(.large-file-status) .outline-toggle {
+  margin-right: 0;
+}
 /* 标签与编辑模式 */
 .tabs {
   display: flex;
