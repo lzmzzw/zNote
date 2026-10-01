@@ -30,6 +30,7 @@ import {
   ClipboardPaste,
   Settings,
   RefreshCw,
+  Focus,
 } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
@@ -47,6 +48,8 @@ import AppDialog from './components/AppDialog.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import DocumentTabs from './components/DocumentTabs.vue';
 import DocumentOutline from './components/DocumentOutline.vue';
+import DesktopSplitter from './components/DesktopSplitter.vue';
+import AppTooltip from './components/AppTooltip.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import OptionSelect from './components/OptionSelect.vue';
 import { tabCloseTargets, spreadsheetText, type ContextMenuItem } from './context-menu';
@@ -74,6 +77,47 @@ let view: EditorView | undefined;
 const mode = ref<DisplayMode>('live');
 const dark = ref(false);
 const documentFontSize = ref(DEFAULT_DOCUMENT_FONT_SIZE);
+const focusMode = ref(false);
+const windowWidth = ref(window.innerWidth || 1280);
+const sidebarWidth = ref(246);
+const splitPercent = ref(50);
+const sidebarMax = computed(() => Math.max(160, Math.min(360, windowWidth.value - 560)));
+const effectiveSidebarWidth = computed(() => Math.min(sidebarWidth.value, sidebarMax.value));
+const showOutline = computed(() => isMarkdown.value && !large.value && !outlineCollapsed.value && !focusMode.value);
+const writingWidth = computed(() =>
+  Math.max(320, windowWidth.value - (showOutline.value ? effectiveSidebarWidth.value + 6 : 0)),
+);
+const splitMin = computed(() => Math.min(45, (240 / writingWidth.value) * 100));
+const effectiveSplitPercent = computed(() =>
+  Math.max(splitMin.value, Math.min(100 - splitMin.value, splitPercent.value)),
+);
+const isSplit = computed(
+  () => mode.value === 'split' && !large.value && (isMarkdown.value || isCsv.value || isJson.value),
+);
+function setSidebarWidth(value: number) {
+  sidebarWidth.value = value;
+  localStorage.setItem('znote-sidebar-width', String(value));
+  measureLayout();
+}
+function setSplitPercent(value: number) {
+  splitPercent.value = value;
+  localStorage.setItem('znote-split-percent', String(value));
+  measureLayout();
+}
+function measureLayout() {
+  previewSync.invalidate();
+  void nextTick(() => view?.requestMeasure());
+}
+function resizeLayout() {
+  windowWidth.value = window.innerWidth;
+  measureLayout();
+}
+function toggleFocusMode() {
+  focusMode.value = !focusMode.value;
+  menu.value = null;
+  measureLayout();
+  void nextTick(() => view?.focus());
+}
 const documentFontStyle = computed(() => ({
   '--font-size-reading': `${documentFontSize.value}px`,
   '--font-size-code': `${documentFontSize.value}px`,
@@ -91,17 +135,30 @@ const busy = ref(false);
 const position = ref('行 1，列 1');
 const count = ref(0);
 const toast = ref('');
+const toastError = ref(false);
 let toastTimer: ReturnType<typeof setTimeout>;
 watch(status, (value) => {
   if (value === '准备就绪') return;
   toast.value = value;
+  toastError.value = /失败|错误|无法|超过|请先|请再次|未覆盖|读取失败/.test(value);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toast.value = '';
-  }, 4000);
+  if (!toastError.value)
+    toastTimer = setTimeout(() => {
+      toast.value = '';
+    }, 4000);
 });
 const preview = ref('');
 const headings = ref<OutlineNode[]>([]);
+const cursorOffset = ref(0);
+const currentHeadingKey = computed(() => {
+  const all = visibleOutline(headings.value, new Set());
+  const current = [...all].reverse().find((heading) => heading.from <= cursorOffset.value);
+  if (!current) return undefined;
+  const visible = visibleOutline(headings.value, new Set(collapsedHeadings.value[activeId.value] ?? []));
+  return [...visible]
+    .reverse()
+    .find((heading) => current.key === heading.key || current.key.startsWith(`${heading.key}/`))?.key;
+});
 const outlineCollapsed = ref(false);
 const gutterWidth = ref(37);
 let gutterObserver: ResizeObserver | undefined;
@@ -153,10 +210,7 @@ function moveCsvResize(event: PointerEvent) {
   const { note, column, startX, widths } = csvResize;
   if (active.value !== note) return stopCsvResize();
   note.csvColumnWidths = [...widths];
-  note.csvColumnWidths[column] = Math.max(
-    80,
-    Math.min(1200, Math.round(widths[column] + event.clientX - startX)),
-  );
+  note.csvColumnWidths[column] = Math.max(80, Math.min(1200, Math.round(widths[column] + event.clientX - startX)));
   touch();
   scheduleRecovery();
 }
@@ -214,7 +268,16 @@ let recoveryTimer: ReturnType<typeof setTimeout>;
 let worker: Worker;
 let formatId = 0;
 let pendingFormat:
-  { id: number; note: Note; version: number; format: NoteFormat; from: number; to: number; operation: 'format' | 'escape' | 'unescape' } | undefined;
+  | {
+      id: number;
+      note: Note;
+      version: number;
+      format: NoteFormat;
+      from: number;
+      to: number;
+      operation: 'format' | 'escape' | 'unescape';
+    }
+  | undefined;
 let recoveryWrite: Promise<unknown> = Promise.resolve();
 let sessionReady = false;
 const closingWindow = ref(false);
@@ -637,6 +700,7 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
         }
         if (u.selectionSet || u.docChanged) {
           const p = u.state.selection.main.head;
+          cursorOffset.value = p;
           const line = u.state.doc.lineAt(p);
           position.value = `行 ${line.number}，列 ${p - line.from + 1}`;
           count.value = u.state.doc.length;
@@ -699,6 +763,7 @@ function selectNote(note: Note) {
   refreshDerived();
   observeGutter();
   const head = note.state.selection.main.head;
+  cursorOffset.value = head;
   const line = note.state.doc.lineAt(head);
   position.value = `行 ${line.number}，列 ${head - line.from + 1}`;
   void nextTick(() => {
@@ -713,7 +778,11 @@ function selectNote(note: Note) {
         restoringScroll = false;
       },
     });
-    if (!(isCsv.value && mode.value === 'live' && !large.value)) view.focus();
+    if (
+      !(isCsv.value && mode.value === 'live' && !large.value) &&
+      document.activeElement?.getAttribute('role') !== 'tab'
+    )
+      view.focus();
   });
   scheduleRecovery();
 }
@@ -728,15 +797,27 @@ function reconfigure() {
   });
 }
 function changeMode(value: DisplayMode) {
+  captureScroll();
+  const previousScroll = view?.scrollDOM.scrollTop ?? 0;
   stopCsvResize();
-  const formatLiveJson = value === 'live' && mode.value !== 'live' && isJson.value && !large.value && !!active.value?.state.doc.length;
+  const formatLiveJson =
+    value === 'live' && mode.value !== 'live' && isJson.value && !large.value && !!active.value?.state.doc.length;
   mode.value = value;
   if (active.value) active.value.mode = value;
   previewSync.reset();
   reconfigure();
   refreshDerived();
   scheduleRecovery();
-  void nextTick(() => view?.requestMeasure());
+  void nextTick(() =>
+    view?.requestMeasure({
+      read: () => null,
+      write: () => {
+        if (!view) return;
+        view.scrollDOM.scrollTop = previousScroll;
+        if (value === 'split') previewSync.sourceToPreview();
+      },
+    }),
+  );
   if (formatLiveJson) formatJson();
 }
 function setTheme(night: boolean) {
@@ -786,9 +867,12 @@ function refreshDerived() {
       const result = buildJsonPreview(text, strict);
       jsonRows.value = result.rows;
       jsonValid.value = result.valid;
-      jsonPreviewText.value = result.valid && jsonPreviewMode.value
-        ? jsonPreviewMode.value === 'compact' ? compactJsonc(text, strict) : formatJsonc(text, strict)
-        : '';
+      jsonPreviewText.value =
+        result.valid && jsonPreviewMode.value
+          ? jsonPreviewMode.value === 'compact'
+            ? compactJsonc(text, strict)
+            : formatJsonc(text, strict)
+          : '';
     }
     void nextTick(() => {
       if (isMarkdown.value && previewHost.value) hydrateDiagrams(previewHost.value, dark.value);
@@ -819,7 +903,7 @@ async function openFile() {
       status.value = '文件已打开';
     }
   } catch (e) {
-    status.value = String(e);
+    status.value = `操作失败：${e}`;
   } finally {
     busy.value = false;
   }
@@ -902,7 +986,7 @@ async function saveNote(note = active.value, saveAs = false): Promise<boolean> {
     }
     return true;
   } catch (e) {
-    status.value = String(e);
+    status.value = `保存失败：${e}`;
     return false;
   } finally {
     busy.value = false;
@@ -988,7 +1072,15 @@ function formatJson() {
     return;
   }
   const id = ++formatId;
-  pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length, operation: 'format' };
+  pendingFormat = {
+    id,
+    note,
+    version: note.version,
+    format: note.format,
+    from: 0,
+    to: note.state.doc.length,
+    operation: 'format',
+  };
   status.value = '正在格式化…';
   worker.postMessage({ id, kind: 'json', text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) });
 }
@@ -996,14 +1088,25 @@ function transformJson(operation: 'escape' | 'unescape') {
   const note = active.value;
   if (!note || busy.value || note.format !== 'json' || mode.value !== 'split' || large.value) return;
   const id = ++formatId;
-  pendingFormat = { id, note, version: note.version, format: note.format, from: 0, to: note.state.doc.length, operation };
+  pendingFormat = {
+    id,
+    note,
+    version: note.version,
+    format: note.format,
+    from: 0,
+    to: note.state.doc.length,
+    operation,
+  };
   status.value = operation === 'escape' ? '正在转义…' : '正在去除转义…';
   worker.postMessage({ id, kind: operation, text: note.state.doc.toString(), strict: !/\.jsonc$/i.test(note.name) });
 }
 function setJsonPreviewMode(value: 'compact' | 'expanded') {
   const note = active.value;
   if (!note || !jsonValid.value || note.format !== 'json') return;
-  jsonPreviewModes.value = { ...jsonPreviewModes.value, [note.id]: jsonPreviewMode.value === value ? undefined : value };
+  jsonPreviewModes.value = {
+    ...jsonPreviewModes.value,
+    [note.id]: jsonPreviewMode.value === value ? undefined : value,
+  };
   refreshDerived();
 }
 function updateCsvOptions(changes: Partial<CsvOptions>) {
@@ -1209,11 +1312,18 @@ function shortcuts(event: KeyboardEvent) {
     return;
   }
   if (event.key === 'Escape') {
+    if (focusMode.value && !settings.value && !menu.value && !context.value && !(view && searchPanelOpen(view.state)))
+      toggleFocusMode();
     menu.value = null;
     settings.value = null;
   }
   if (settings.value || !(event.ctrlKey || event.metaKey)) return;
   const key = event.key.toLowerCase();
+  if (key === 'enter' && event.shiftKey) {
+    event.preventDefault();
+    toggleFocusMode();
+    return;
+  }
   if (key === 'f' || key === 'h') {
     event.preventDefault();
     searchPanel(key === 'h');
@@ -1251,6 +1361,11 @@ function setLineEnding(value: string) {
   }
 }
 onMounted(async () => {
+  const savedSidebar = Number(localStorage.getItem('znote-sidebar-width'));
+  const savedSplit = Number(localStorage.getItem('znote-split-percent'));
+  if (Number.isFinite(savedSidebar) && savedSidebar >= 160 && savedSidebar <= 360) sidebarWidth.value = savedSidebar;
+  if (Number.isFinite(savedSplit) && savedSplit >= 10 && savedSplit <= 90) splitPercent.value = savedSplit;
+  window.addEventListener('resize', resizeLayout);
   dark.value = localStorage.getItem('znote-theme') === 'dark';
   documentFontSize.value = restoreDocumentFontSize(localStorage.getItem('znote-font-size'));
   if (native) {
@@ -1303,9 +1418,7 @@ onMounted(async () => {
   view.scrollDOM.addEventListener('scroll', onSourceScroll);
   refreshDerived();
   if (document.fonts?.load)
-    void Promise.allSettled([
-      document.fonts.load('14px "zNote Sans SC"'),
-    ]).then(() => view?.requestMeasure());
+    void Promise.allSettled([document.fonts.load('14px "zNote Sans SC"')]).then(() => view?.requestMeasure());
   selectNote(active.value!);
   worker = new Worker(new URL('./format.worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = ({ data }: MessageEvent<{ id: number; text?: string; error?: string }>) => {
@@ -1329,9 +1442,14 @@ onMounted(async () => {
       return;
     }
     const changes = { from: pending.from, to: pending.to, insert: data.text! };
-    if (pending.note === active.value) view?.dispatch({ changes, userEvent: 'input.format', annotations: isolateHistory.of('full') });
+    if (pending.note === active.value)
+      view?.dispatch({ changes, userEvent: 'input.format', annotations: isolateHistory.of('full') });
     else {
-      pending.note.state = pending.note.state.update({ changes, userEvent: 'input.format', annotations: isolateHistory.of('full') }).state;
+      pending.note.state = pending.note.state.update({
+        changes,
+        userEvent: 'input.format',
+        annotations: isolateHistory.of('full'),
+      }).state;
       pending.note.version++;
       pending.note.dirty = true;
       touch();
@@ -1366,13 +1484,14 @@ onBeforeUnmount(() => {
   clearTimeout(recoveryTimer);
   clearTimeout(toastTimer);
   window.removeEventListener('keydown', shortcuts);
+  window.removeEventListener('resize', resizeLayout);
 });
 </script>
 
 <template>
   <div
     class="app"
-    :class="{ dark }"
+    :class="{ dark, 'focus-mode': focusMode }"
     :style="documentFontStyle"
     :inert="closingWindow"
     @contextmenu.capture="onContextMenu"
@@ -1434,6 +1553,10 @@ onBeforeUnmount(() => {
             ><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button>
             <hr />
             <button @click="searchPanel()"><Search :size="15" />查找与替换 <kbd>Ctrl+F</kbd></button>
+            <hr />
+            <button :aria-pressed="focusMode" @click="toggleFocusMode">
+              <Focus :size="15" />专注模式 <kbd>Ctrl+Shift+Enter</kbd>
+            </button>
           </div>
         </div>
         <div class="menu-group">
@@ -1478,13 +1601,22 @@ onBeforeUnmount(() => {
               "
             >
               <Settings :size="15" />设置</button
-            ><button :disabled="checkingUpdate" @click="checkUpdates"
-              ><RefreshCw :size="15" />检查更新<span class="menu-version">v{{ appVersion }}</span></button
-            >
+            ><button :disabled="checkingUpdate" @click="checkUpdates">
+              <RefreshCw :size="15" />检查更新<span class="menu-version">v{{ appVersion }}</span>
+            </button>
           </div>
         </div>
       </nav>
       <div class="titlebar-drag" data-tauri-drag-region></div>
+      <button
+        class="focus-toggle"
+        :aria-label="focusMode ? '退出专注模式' : '进入专注模式'"
+        :data-tooltip="focusMode ? '退出专注模式' : '进入专注模式'"
+        :aria-pressed="focusMode"
+        @click="toggleFocusMode"
+      >
+        <Focus :size="16" />
+      </button>
       <div v-if="native" class="window-controls">
         <button title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()"><Minus :size="16" /></button
         ><button
@@ -1498,11 +1630,22 @@ onBeforeUnmount(() => {
     </div>
     <div class="app-body">
       <DocumentOutline
-        v-if="isMarkdown && !large && !outlineCollapsed"
+        v-if="showOutline"
+        :style="{ width: `${effectiveSidebarWidth}px` }"
         :headings="headings"
+        :current-key="currentHeadingKey"
         :collapsed="collapsedHeadings[activeId] ?? []"
         @toggle="toggleHeading"
         @select="goToHeading"
+      />
+      <DesktopSplitter
+        v-if="showOutline"
+        :model-value="effectiveSidebarWidth"
+        :min="160"
+        :max="sidebarMax"
+        :reset-value="246"
+        label="文档大纲宽度"
+        @update:model-value="setSidebarWidth"
       />
       <main>
         <DocumentTabs
@@ -1517,6 +1660,7 @@ onBeforeUnmount(() => {
         <div v-if="large" class="notice">大文件模式 · 已暂停语法分析、大纲和预览；会话上限 256 MiB。</div>
         <div
           class="writing-area"
+          :style="{ '--source-width': `${effectiveSplitPercent}%` }"
           :class="[
             {
               split: mode === 'split' && !large && (isMarkdown || isCsv || isJson),
@@ -1524,16 +1668,40 @@ onBeforeUnmount(() => {
               reading: (currentFormat === 'txt' && !isStructuredText) || isMarkdown,
               structured: isJson || isCsv || isStructuredText,
             },
-            isMarkdown && mode === 'live' ? `markdown-width-${active?.markdownWidth ?? 'standard'}` : '',
+            isMarkdown ? `markdown-width-${active?.markdownWidth ?? 'standard'}` : '',
           ]"
         >
-          <div class="source-pane" :class="{ 'json-source-pane': mode === 'split' && !large && isJson }" v-show="!(mode === 'live' && isCsv && !large)">
+          <div
+            class="source-pane"
+            :class="{ 'json-source-pane': mode === 'split' && !large && isJson }"
+            v-show="!(mode === 'live' && isCsv && !large)"
+          >
             <div v-if="mode === 'split' && !large && isJson" class="json-float-actions" aria-label="JSON 源码操作">
-              <button title="将整份源码转为 JSON 字符串" :disabled="busy || !count" @click="transformJson('escape')">转义</button>
-              <button title="将完整 JSON 字符串去除一层转义" :disabled="busy || !count" @click="transformJson('unescape')">去除转义</button>
+              <button title="将整份源码转为 JSON 字符串" :disabled="busy || !count" @click="transformJson('escape')">
+                转义
+              </button>
+              <button
+                title="将完整 JSON 字符串去除一层转义"
+                :disabled="busy || !count"
+                @click="transformJson('unescape')"
+              >
+                去除转义
+              </button>
             </div>
             <div ref="host" class="editor-host"></div>
           </div>
+          <DesktopSplitter
+            v-if="isSplit"
+            :model-value="effectiveSplitPercent"
+            :min="splitMin"
+            :max="100 - splitMin"
+            :reset-value="50"
+            :step="1"
+            unit="percent"
+            :pixels-per-unit="writingWidth / 100"
+            label="编辑与预览比例"
+            @update:model-value="setSplitPercent"
+          />
           <article
             v-if="mode === 'split' && !large && isMarkdown"
             ref="previewHost"
@@ -1545,8 +1713,20 @@ onBeforeUnmount(() => {
           ></article>
           <div v-if="mode === 'split' && !large && isJson" class="json-preview-pane">
             <div v-if="jsonValid" class="json-float-actions" aria-label="JSON 预览操作">
-              <button title="压缩预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'compact'" @click="setJsonPreviewMode('compact')">压缩</button>
-              <button title="展开预览；再次点击返回结构视图" :aria-pressed="jsonPreviewMode === 'expanded'" @click="setJsonPreviewMode('expanded')">展开</button>
+              <button
+                title="压缩预览；再次点击返回结构视图"
+                :aria-pressed="jsonPreviewMode === 'compact'"
+                @click="setJsonPreviewMode('compact')"
+              >
+                压缩
+              </button>
+              <button
+                title="展开预览；再次点击返回结构视图"
+                :aria-pressed="jsonPreviewMode === 'expanded'"
+                @click="setJsonPreviewMode('expanded')"
+              >
+                展开
+              </button>
             </div>
             <section
               ref="previewHost"
@@ -1583,11 +1763,37 @@ onBeforeUnmount(() => {
           >
             <p v-if="csvError" class="csv-error" role="alert">{{ csvError }}</p>
             <div v-if="csvRows.length" class="csv-table-wrap">
-              <table :class="{ 'csv-resized': csvWidths.length }" :style="csvWidths.length ? { width: `${csvWidths.reduce((sum, width) => sum + width, 0)}px`, minWidth: '0' } : undefined">
-                <colgroup><col v-for="index in csvColumnCount" :key="index" :style="csvWidths[index - 1] ? { width: `${csvWidths[index - 1]}px` } : undefined" /></colgroup>
+              <table
+                :class="{ 'csv-resized': csvWidths.length }"
+                :style="
+                  csvWidths.length
+                    ? { width: `${csvWidths.reduce((sum, width) => sum + width, 0)}px`, minWidth: '0' }
+                    : undefined
+                "
+              >
+                <colgroup>
+                  <col
+                    v-for="index in csvColumnCount"
+                    :key="index"
+                    :style="csvWidths[index - 1] ? { width: `${csvWidths[index - 1]}px` } : undefined"
+                  />
+                </colgroup>
                 <thead v-if="active?.csvOptions.firstRowHeader">
                   <tr :data-source-start="csvRowLines[0]?.start" :data-source-end="csvRowLines[0]?.end">
-                    <th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">{{ cell }}<span class="csv-resize-handle" role="separator" aria-orientation="vertical" tabindex="0" :aria-label="`调整第 ${index + 1} 列宽度`" @pointerdown.stop.prevent="startCsvResize($event, index)" @keydown.left.stop.prevent="nudgeCsvColumn(index, -16)" @keydown.right.stop.prevent="nudgeCsvColumn(index, 16)" @click.stop></span></th>
+                    <th v-for="(cell, index) in csvRows[0]" :key="index" scope="col">
+                      {{ cell
+                      }}<span
+                        class="csv-resize-handle"
+                        role="separator"
+                        aria-orientation="vertical"
+                        tabindex="0"
+                        :aria-label="`调整第 ${index + 1} 列宽度`"
+                        @pointerdown.stop.prevent="startCsvResize($event, index)"
+                        @keydown.left.stop.prevent="nudgeCsvColumn(index, -16)"
+                        @keydown.right.stop.prevent="nudgeCsvColumn(index, 16)"
+                        @click.stop
+                      ></span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1597,7 +1803,21 @@ onBeforeUnmount(() => {
                     :data-source-start="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.start"
                     :data-source-end="csvRowLines[rowIndex + (active?.csvOptions.firstRowHeader ? 1 : 0)]?.end"
                   >
-                    <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}<span v-if="!active?.csvOptions.firstRowHeader && rowIndex === 0" class="csv-resize-handle" role="separator" aria-orientation="vertical" tabindex="0" :aria-label="`调整第 ${cellIndex + 1} 列宽度`" @pointerdown.stop.prevent="startCsvResize($event, cellIndex)" @keydown.left.stop.prevent="nudgeCsvColumn(cellIndex, -16)" @keydown.right.stop.prevent="nudgeCsvColumn(cellIndex, 16)" @click.stop></span></td>
+                    <td v-for="(cell, cellIndex) in row" :key="cellIndex">
+                      {{ cell
+                      }}<span
+                        v-if="!active?.csvOptions.firstRowHeader && rowIndex === 0"
+                        class="csv-resize-handle"
+                        role="separator"
+                        aria-orientation="vertical"
+                        tabindex="0"
+                        :aria-label="`调整第 ${cellIndex + 1} 列宽度`"
+                        @pointerdown.stop.prevent="startCsvResize($event, cellIndex)"
+                        @keydown.left.stop.prevent="nudgeCsvColumn(cellIndex, -16)"
+                        @keydown.right.stop.prevent="nudgeCsvColumn(cellIndex, 16)"
+                        @click.stop
+                      ></span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -1606,8 +1826,9 @@ onBeforeUnmount(() => {
           </section>
         </div>
         <footer>
+          <span v-if="busy" class="file-status" role="status">处理中</span>
           <button
-            v-if="isMarkdown && !large"
+            v-if="isMarkdown && !large && !focusMode"
             class="outline-toggle"
             :style="{ width: `${gutterWidth}px` }"
             :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
@@ -1628,7 +1849,13 @@ onBeforeUnmount(() => {
         </footer>
       </main>
     </div>
-    <div v-if="toast" class="status-toast" role="status">{{ toast }}</div>
+    <div v-if="toast" class="status-toast" :class="{ error: toastError }" :role="toastError ? 'alert' : 'status'">
+      <span>{{ toast }}</span
+      ><button class="dismiss-toast" aria-label="关闭提示" data-tooltip="关闭提示" @click="toast = ''">
+        <X :size="15" />
+      </button>
+    </div>
+    <AppTooltip />
     <SettingsDialog
       v-if="settings"
       :kind="settings"

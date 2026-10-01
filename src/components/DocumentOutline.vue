@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { ChevronRight, ChevronDown } from 'lucide-vue-next';
 import { visibleOutline, type OutlineNode } from '../outline';
-const props = defineProps<{ headings: OutlineNode[]; collapsed: string[] }>();
+const props = defineProps<{ headings: OutlineNode[]; collapsed: string[]; currentKey?: string }>();
 const emit = defineEmits<{ toggle: [key: string]; select: [heading: OutlineNode] }>();
 const collapsedKeys = computed(() => new Set(props.collapsed));
 const visibleHeadings = computed(() => visibleOutline(props.headings, collapsedKeys.value));
@@ -16,6 +16,7 @@ const visibleHeadings = computed(() => visibleOutline(props.headings, collapsedK
         v-for="heading in visibleHeadings"
         :key="heading.key"
         class="outline-row"
+        :class="{ current: heading.key === currentKey }"
         :style="{ paddingLeft: `${heading.depth * 14}px` }"
       >
         <button
@@ -29,7 +30,12 @@ const visibleHeadings = computed(() => visibleOutline(props.headings, collapsedK
           <ChevronRight v-if="collapsedKeys.has(heading.key)" :size="13" /><ChevronDown v-else :size="13" />
         </button>
         <span v-else class="outline-disclosure-placeholder" aria-hidden="true"></span>
-        <button class="outline-link" :title="heading.title" @click="emit('select', heading)">
+        <button
+          class="outline-link"
+          :title="heading.title"
+          :aria-current="heading.key === currentKey ? 'location' : undefined"
+          @click="emit('select', heading)"
+        >
           {{ heading.title }}
         </button>
       </div>

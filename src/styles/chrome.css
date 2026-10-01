@@ -48,7 +48,7 @@ main {
   background: var(--panel);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
+  border-right: 0;
   padding: 16px 12px;
 }
 .outline {
@@ -283,8 +283,8 @@ footer .outline-toggle:hover {
   overflow: hidden;
 }
 .split .source-pane {
-  width: 50%;
-  flex: 1;
+  width: var(--source-width, 50%);
+  flex: 0 0 calc(var(--source-width, 50%) - 3px);
 }
 .json-preview-pane {
   position: relative;
@@ -294,7 +294,7 @@ footer .outline-toggle:hover {
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border);
+  border-left: 0;
 }
 .json-preview-pane .preview {
   border-left: 0;
@@ -379,4 +379,64 @@ footer {
 }
 .source-pane > .preview {
   border-left: 0;
+}
+.desktop-splitter {
+  width: 6px;
+  flex: 0 0 6px;
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  background: var(--bg);
+}
+.desktop-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: var(--border);
+  transition: background-color var(--duration-fast) ease;
+}
+.desktop-splitter:hover::after,
+.desktop-splitter.is-dragging::after,
+.desktop-splitter:focus-visible::after {
+  background: var(--accent);
+}
+.desktop-splitter:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.writing-area.split > .preview {
+  border-left: 0;
+}
+.focus-toggle {
+  width: 32px;
+  height: 28px;
+  margin-right: 8px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.focus-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--selected);
+}
+.focus-mode .tabs {
+  display: none;
+}
+.file-status {
+  margin-right: auto;
+  white-space: nowrap;
+}
+.app-tooltip {
+  position: fixed;
+  z-index: 20000;
+  max-width: min(300px, calc(100vw - 16px));
+  pointer-events: none;
+  background: var(--menu-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: var(--menu-shadow);
+  padding: 5px 8px;
+  font: 12px/1.5 var(--font-ui);
+  overflow-wrap: anywhere;
 }

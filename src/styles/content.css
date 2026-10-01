@@ -301,15 +301,15 @@
   margin-bottom: 0;
 }
 .live-rendered p {
-  margin: 7px 0;
+  margin: 0.75em 0;
 }
 .live-rendered ul,
 .live-rendered ol {
   padding-left: 28px;
-  margin: 7px 0;
+  margin: 0.75em 0;
 }
 .live-rendered li {
-  padding: 2px 0;
+  padding: 0.15em 0;
 }
 .live-rendered li > p {
   margin: 0;
@@ -320,11 +320,19 @@
   overflow-x: auto;
 }
 .live-rendered pre {
-  margin: 8px 0;
+  margin: 1em 0;
   overflow-x: auto;
 }
 .live-rendered blockquote {
-  margin: 8px 0;
+  margin: 1em 0;
+}
+.writing-area.markdown-width-standard > article.preview > * {
+  max-width: calc(var(--font-size-reading) * 68.57);
+  margin-inline: auto;
+}
+.writing-area.markdown-width-compact > article.preview > * {
+  max-width: calc(var(--font-size-reading) * 51.43);
+  margin-inline: auto;
 }
 .live-rendered hr {
   border: 0;

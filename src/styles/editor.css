@@ -52,6 +52,18 @@
 .live-h3 {
   font-size: calc(var(--font-size-reading) * 1.14);
 }
+.live-h4,
+.live-h5,
+.live-h6 {
+  font-size: var(--font-size-reading);
+}
+.live-h5,
+.live-h6 {
+  color: var(--muted) !important;
+}
+.live-h6 {
+  font-weight: 500;
+}
 .cm-panels {
   background: var(--panel) !important;
   color: var(--text) !important;

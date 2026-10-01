@@ -29,6 +29,8 @@ function key(value: string) { window.dispatchEvent(new KeyboardEvent('keydown', 
 function editor() { return EditorView.findFromDOM(root.querySelector('.cm-editor')!)!; }
 async function close() { await bridge.close!({ preventDefault: vi.fn() }); }
 beforeEach(() => {
+  localStorage.removeItem('znote-sidebar-width');
+  localStorage.removeItem('znote-split-percent');
   localStorage.removeItem('znote-font-size');
   bridge.data = null; bridge.fail = false; bridge.open = null; bridge.requests = []; bridge.saveArgs = null; bridge.maximized = false; bridge.resized = undefined; bridge.destroy.mockClear();
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -47,6 +49,35 @@ beforeEach(() => {
   writeText.mockClear(); readText.mockClear();
 });
 describe('window controls', () => {
+  it('keeps keyboard tab navigation focused and marks the current outline heading', async () => {
+    await mount(); await openDoc('note.md', '# First\n\ntext\n\n## Second\n\nlast');
+    editor().dispatch({ selection: { anchor: 28 } }); await nextTick();
+    expect(root.querySelector('.outline-link[aria-current="location"]')?.textContent).toContain('Second');
+    key('n'); await nextTick();
+    const tab = root.querySelectorAll<HTMLButtonElement>('[role="tab"]')[2];
+    tab.focus(); tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    await nextTick(); await nextTick();
+    expect(document.activeElement?.getAttribute('role')).toBe('tab');
+    expect(document.activeElement?.getAttribute('aria-selected')).toBe('true');
+  });
+  it('adjusts and restores pane preferences without altering text, and exits focus mode', async () => {
+    await mount(); await openDoc('note.md', '# Heading\n\ntext');
+    const original = editor().state.doc.toString();
+    const splitter = root.querySelector<HTMLElement>('[aria-label="文档大纲宽度"]')!;
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await nextTick();
+    expect(localStorage.getItem('znote-sidebar-width')).toBe('254');
+    root.querySelector<HTMLButtonElement>('[aria-label="分屏"]')!.click(); await nextTick();
+    root.querySelector<HTMLElement>('[aria-label="编辑与预览比例"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await nextTick();
+    expect(localStorage.getItem('znote-split-percent')).toBe('51');
+    root.querySelector<HTMLButtonElement>('.focus-toggle')!.click(); await nextTick();
+    expect(root.querySelector('.app')?.classList.contains('focus-mode')).toBe(true);
+    expect(root.querySelector('.sidebar')).toBeNull();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await nextTick();
+    expect(root.querySelector('.sidebar')).not.toBeNull();
+    expect(editor().state.doc.toString()).toBe(original);
+    unmount(); await mount();
+    expect(root.querySelector('.writing-area')?.getAttribute('style')).toContain('51%');
+  });
   it('shows the restore icon while maximized and tracks external resize', async () => {
     await mount();
     const control = root.querySelector<HTMLButtonElement>('.window-controls button:nth-child(2)')!;
