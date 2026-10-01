@@ -109,13 +109,12 @@ function auxClick(event: MouseEvent, note: Note) {
         <button
           class="close-tab"
           :aria-label="`关闭 ${note.name}`"
-          data-tooltip="关闭文档"
           @click="emit('close', note)"
         >
           <X :size="13" />
         </button>
       </div>
-      <button class="add-tab" data-tooltip="新建笔记" aria-label="新建笔记" @click="emit('create')">
+      <button class="add-tab" aria-label="新建笔记" @click="emit('create')">
         <Plus :size="16" />
       </button>
     </div>

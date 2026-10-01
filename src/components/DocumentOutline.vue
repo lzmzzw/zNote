@@ -24,7 +24,6 @@ const visibleHeadings = computed(() => visibleOutline(props.headings, collapsedK
           class="outline-disclosure"
           :aria-label="`${collapsedKeys.has(heading.key) ? '展开' : '折叠'} ${heading.title}`"
           :aria-expanded="!collapsedKeys.has(heading.key)"
-          :title="collapsedKeys.has(heading.key) ? '展开子标题' : '折叠子标题'"
           @click="emit('toggle', heading.key)"
         >
           <ChevronRight v-if="collapsedKeys.has(heading.key)" :size="13" /><ChevronDown v-else :size="13" />

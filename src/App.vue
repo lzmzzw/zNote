@@ -1646,15 +1646,14 @@ onBeforeUnmount(() => {
         <Focus :size="16" />
       </button>
       <div v-if="native" class="window-controls">
-        <button data-tooltip="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
+        <button aria-label="最小化" @click="getCurrentWindow().minimize()">
           <Minus :size="16" /></button
         ><button
-          :data-tooltip="maximized ? '还原' : '最大化'"
           :aria-label="maximized ? '还原' : '最大化'"
           @click="toggleMaximized"
         >
           <Copy v-if="maximized" :size="13" /><Square v-else :size="13" /></button
-        ><button class="window-close" data-tooltip="关闭" aria-label="关闭" @click="closeWindow">
+        ><button class="window-close" aria-label="关闭" @click="closeWindow">
           <X :size="17" />
         </button>
       </div>
@@ -1863,7 +1862,6 @@ onBeforeUnmount(() => {
             class="outline-toggle"
             :style="{ width: `${gutterWidth}px` }"
             :aria-label="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
-            :data-tooltip="outlineCollapsed ? '展开文档大纲' : '收起文档大纲'"
             :aria-expanded="!outlineCollapsed"
             @click="outlineCollapsed = !outlineCollapsed"
           >
@@ -1882,7 +1880,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="toast" class="status-toast" :class="{ error: toastError }" :role="toastError ? 'alert' : 'status'">
       <span>{{ toast }}</span
-      ><button class="dismiss-toast" aria-label="关闭提示" data-tooltip="关闭提示" @click="dismissToast">
+      ><button class="dismiss-toast" aria-label="关闭提示" @click="dismissToast">
         <X :size="15" />
       </button>
     </div>

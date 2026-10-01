@@ -87,7 +87,6 @@ function onKeydown(event: KeyboardEvent) {
     :aria-valuemax="max"
     :aria-valuenow="modelValue"
     :aria-valuetext="`${Math.round(modelValue)}${unit === 'percent' ? '%' : 'px'}`"
-    :title="label"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerEnd"
