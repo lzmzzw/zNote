@@ -1814,13 +1814,14 @@ onBeforeUnmount(() => {
             :aria-expanded="!outlineCollapsed"
             @click="outlineCollapsed = !outlineCollapsed"
           >
-            <ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" /></button
-          >
+            <ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" />
+          </button>
           <span v-if="large" class="large-file-status" role="status"
             >大文件模式 · 源码渐进高亮；Markdown / JSON 大纲与预览暂停；会话上限 256 MiB。</span
           >
           <span v-if="busy" class="file-status" role="status">处理中</span>
-          <span>{{ position }}</span
+          <div id="csv-status-slot" v-show="isCsv && mode !== 'source'"></div>
+          <span v-if="!isCsv || mode === 'source'">{{ position }}</span
           ><span>{{ count.toLocaleString() }} 字符</span
           ><OptionSelect
             label="保存编码"

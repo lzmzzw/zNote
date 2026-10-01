@@ -151,6 +151,8 @@ describe('window controls', () => {
   it('keeps a CRLF CSV clean when opened, switched and restored, but detects edits', async () => {
     await mount();
     await openDoc('windows.csv', 'name,value\r\na,1\r\n');
+    expect(root.querySelector('footer .csv-status')).not.toBeNull();
+    expect(root.querySelector('.csv-preview .csv-status')).toBeNull();
     expect(root.querySelector('[role="tab"][aria-label="windows.csv，已保存"]')).not.toBeNull();
     root.querySelector<HTMLButtonElement>('[aria-label="源码"]')!.click();
     await nextTick();

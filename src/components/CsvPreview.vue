@@ -299,23 +299,25 @@ defineExpose({ contextMenu, scrollToLine });
 
 <template>
   <section class="preview csv-preview" aria-label="CSV 预览" :aria-busy="state.status === 'parsing' && !stopped">
-    <div class="csv-status">
-      <span v-if="stopped">解析已暂停</span>
-      <span v-else-if="state.status === 'parsing'" role="status">解析 {{ Math.round(state.progress * 100) }}%</span>
-      <span v-else>{{ state.rowCount.toLocaleString() }} 行 · {{ state.columnCount.toLocaleString() }} 列</span>
-      <span v-if="copying" role="status">正在复制</span>
-      <form v-if="state.rowCount" @submit.prevent="goToRow(gotoRow)">
-        <label
-          >行 <input v-model.number="gotoRow" type="number" min="1" :max="state.rowCount" aria-label="跳转到 CSV 行"
-        /></label>
-      </form>
-      <button v-if="state.status === 'parsing' && !stopped" aria-label="取消 CSV 解析" @click="cancel">
-        <Square :size="14" />
-      </button>
-      <button v-if="stopped || state.status === 'error'" aria-label="重新解析 CSV" @click="reset">
-        <RotateCw :size="15" />
-      </button>
-    </div>
+    <Teleport to="#csv-status-slot" defer>
+      <div class="csv-status">
+        <span v-if="stopped">解析已暂停</span>
+        <span v-else-if="state.status === 'parsing'" role="status">解析 {{ Math.round(state.progress * 100) }}%</span>
+        <span v-else>{{ state.rowCount.toLocaleString() }} 行 · {{ state.columnCount.toLocaleString() }} 列</span>
+        <span v-if="copying" role="status">正在复制</span>
+        <form v-if="state.rowCount" @submit.prevent="goToRow(gotoRow)">
+          <label
+            >行 <input v-model.number="gotoRow" type="number" min="1" :max="state.rowCount" aria-label="跳转到 CSV 行"
+          /></label>
+        </form>
+        <button v-if="state.status === 'parsing' && !stopped" aria-label="取消 CSV 解析" @click="cancel">
+          <Square :size="14" />
+        </button>
+        <button v-if="stopped || state.status === 'error'" aria-label="重新解析 CSV" @click="reset">
+          <RotateCw :size="15" />
+        </button>
+      </div>
+    </Teleport>
     <p v-if="state.error" class="csv-error" role="alert">{{ state.error }}</p>
     <div ref="viewport" class="csv-table-wrap" tabindex="0" aria-label="CSV 表格" @scroll="onScroll">
       <div
