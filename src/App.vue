@@ -33,6 +33,9 @@ import {
   Focus,
   Info,
   WrapText,
+  FileText,
+  Table2,
+  FileJson,
 } from 'lucide-vue-next';
 import { renderMarkdown, markdownHeadings } from './preview';
 import { buildOutline, visibleOutline, type OutlineNode } from './outline';
@@ -1564,18 +1567,18 @@ onBeforeUnmount(() => {
           <button :aria-expanded="menu === 'format'" @click="toggleMenu('format')">格式</button>
           <div v-if="menu === 'format'" class="menu-popup">
             <button role="menuitemcheckbox" :aria-checked="sourceWrapping" @click="toggleWrapping">
-              <WrapText :size="15" />自动折行
+              <WrapText :size="15" />自动换行
             </button>
             <hr />
-            <button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('markdown')">显示为 Markdown</button
-            ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('csv')">显示为 CSV</button
-            ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('json')">显示为 JSON</button>
+            <button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('markdown')"><FileText :size="15" />显示为 Markdown</button
+            ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('csv')"><Table2 :size="15" />显示为 CSV</button
+            ><button :disabled="displayMenu !== 'enabled' || busy" @click="displayAs('json')"><FileJson :size="15" />显示为 JSON</button>
             <hr />
             <template v-if="conversionMenu !== 'hidden'"
               ><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('markdown')">
-                转为 Markdown</button
-              ><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('csv')">转为 CSV</button
-              ><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('json')">转为 JSON</button>
+                <FileText :size="15" />转为 Markdown</button
+              ><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('csv')"><Table2 :size="15" />转为 CSV</button
+              ><button :disabled="conversionMenu !== 'enabled' || busy" @click="changeFormat('json')"><FileJson :size="15" />转为 JSON</button>
               <hr /></template
             ><button
               :disabled="!isMarkdown || busy || large"
