@@ -12,7 +12,7 @@
   padding: 18px 18px 100px;
 }
 .preview h1 {
-  font-size: 27px;
+  font-size: 1.93em;
   border-bottom: 1px solid var(--border);
   padding-bottom: 9px;
 }
@@ -64,6 +64,57 @@
 .preview h6 {
   color: var(--heading);
   line-height: 1.35;
+  font-weight: 600;
+  margin: 1.5em 0 0.65em;
+}
+.preview h2 {
+  font-size: 1.43em;
+}
+.preview h3 {
+  font-size: 1.14em;
+}
+.preview h4,
+.preview h5,
+.preview h6 {
+  font-size: 1em;
+}
+.preview h5 {
+  color: var(--muted);
+}
+.preview h6 {
+  color: var(--muted);
+  font-weight: 500;
+}
+.preview p {
+  margin: 0.75em 0;
+}
+.preview ul,
+.preview ol {
+  margin: 0.75em 0;
+  padding-left: 2em;
+}
+.preview li {
+  padding: 0.15em 0;
+}
+.preview li > p {
+  margin: 0.35em 0;
+}
+.preview blockquote {
+  margin: 1em 0;
+}
+.preview pre,
+.preview table,
+.preview .diagram-preview {
+  margin: 1em 0;
+}
+.preview hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.5em 0;
+}
+.preview a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .preview pre code {
   display: block;
@@ -131,9 +182,6 @@
 .json-preview-row {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-.json-preview-pane .json-preview-row {
-  padding-right: 110px;
 }
 .json-preview .json-preview-text {
   margin: 0;
@@ -223,7 +271,7 @@
   background: var(--panel);
 }
 .csv-error {
-  color: #b34437;
+  color: var(--danger);
 }
 .csv-empty {
   color: var(--muted);

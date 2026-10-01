@@ -118,7 +118,7 @@ describe('Markdown width settings', () => {
     await nextTick(); await nextTick();
     const width = root.querySelector<HTMLButtonElement>('[role="combobox"][aria-label="显示宽度"]')!;
     width.click(); await nextTick(); await nextTick();
-    [...root.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent?.includes('720px'))!.click(); await nextTick();
+    [...root.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent?.includes('紧凑'))!.click(); await nextTick();
     expect(root.querySelector('.writing-area')?.classList.contains('markdown-width-compact')).toBe(true);
     root.querySelector<HTMLButtonElement>('[aria-label="关闭 Markdown 设置"]')!.click(); await nextTick();
     await openDoc('other.md', '# second');

@@ -33,8 +33,8 @@ const lineEndingOptions = computed(() => [
 ]);
 const widthOptions = [
   { value: 'full', label: '全宽' },
-  { value: 'standard', label: '标准 · 960px' },
-  { value: 'compact', label: '紧凑 · 720px' },
+  { value: 'standard', label: '标准' },
+  { value: 'compact', label: '紧凑' },
 ];
 const delimiterOptions = [
   { value: '', label: '自动识别' },

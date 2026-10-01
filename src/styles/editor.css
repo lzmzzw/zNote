@@ -10,7 +10,7 @@
 .cm-scroller {
   font-family: var(--font-document) !important;
   font-size: var(--font-size-code);
-  line-height: 1.95 !important;
+  line-height: 1.7 !important;
   overflow: auto !important;
 }
 .cm-content {
@@ -20,13 +20,13 @@
 .cm-gutters {
   border: 0 !important;
   color: var(--muted) !important;
-  font-size: 10px;
+  font-size: 12px;
   background: var(--panel) !important;
   border-right: 1px solid var(--border) !important;
   padding-left: 0;
 }
 .cm-activeLine {
-  background: var(--selected) !important;
+  background: var(--active-line) !important;
 }
 .cm-activeLineGutter {
   color: var(--accent) !important;
@@ -43,14 +43,14 @@
   color: var(--heading) !important;
 }
 .live-h1 {
-  font-size: 27px;
+  font-size: calc(var(--font-size-reading) * 1.93);
   letter-spacing: 0;
 }
 .live-h2 {
-  font-size: 20px;
+  font-size: calc(var(--font-size-reading) * 1.43);
 }
 .live-h3 {
-  font-size: 16px;
+  font-size: calc(var(--font-size-reading) * 1.14);
 }
 .cm-panels {
   background: var(--panel) !important;
@@ -84,7 +84,7 @@
   background: transparent !important;
 }
 .app.dark .cm-activeLine {
-  background: #ffffff0a !important;
+  background: var(--active-line) !important;
 }
 .app.dark .cm-activeLineGutter {
   background: #ffffff14 !important;
@@ -93,11 +93,11 @@
   max-width: none;
 }
 .writing-area.live.markdown-width-standard .cm-content {
-  max-width: 960px;
+  max-width: calc(var(--font-size-reading) * 68.57);
   margin-inline: auto;
 }
 .writing-area.live.markdown-width-compact .cm-content {
-  max-width: 720px;
+  max-width: calc(var(--font-size-reading) * 51.43);
   margin-inline: auto;
 }
 .editor-host .cm-editor {
@@ -226,16 +226,16 @@
   font-size: 11px !important;
 }
 .cm-editor .cm-searchMatch {
-  background: #cde5a5;
+  background: var(--search-match);
 }
 .cm-editor .cm-searchMatch-selected {
-  background: #9cca8a;
+  background: var(--search-current);
 }
 .app.dark .cm-editor .cm-searchMatch {
-  background: #6b654180;
+  background: var(--search-match);
 }
 .app.dark .cm-editor .cm-searchMatch-selected {
-  background: #a89959a6;
+  background: var(--search-current);
 }
 .writing-area.reading .cm-scroller {
   font-family: var(--font-reading) !important;

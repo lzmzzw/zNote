@@ -83,7 +83,7 @@ main {
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 29px;
+  min-height: 30px;
   border-radius: 3px;
 }
 .outline-row:hover {
@@ -115,7 +115,7 @@ main {
   height: 100%;
   justify-content: flex-start;
   color: var(--text);
-  font-size: var(--font-size-reading);
+  font-size: 13px;
 }
 .outline .outline-link:hover {
   background: transparent;
@@ -242,6 +242,18 @@ footer .outline-toggle:hover {
 .tab .file-icon.unsaved {
   color: var(--unsaved);
 }
+.tab .unsaved-dot {
+  flex: none;
+  color: var(--unsaved);
+}
+.outline-row.current {
+  background: var(--selected);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.outline-row.current .outline-link {
+  color: var(--accent);
+  font-weight: 600;
+}
 .tabs .mode-switch button svg {
   opacity: 0.62;
 }
@@ -289,28 +301,26 @@ footer .outline-toggle:hover {
   min-height: 0;
 }
 .json-float-actions {
-  position: absolute;
-  z-index: 5;
-  top: calc(6px + var(--font-size-code) * 0.8);
-  right: 9px;
-  transform: translateY(-50%);
-  height: 27px;
+  position: relative;
+  flex: none;
+  min-height: 32px;
   display: flex;
   align-items: center;
-  gap: 1px;
-  padding: 2px 4px;
-  opacity: 0.25;
-  transition: opacity 0.15s ease;
+  gap: 4px;
+  padding: 2px 8px;
+  justify-content: flex-end;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
 }
 .json-float-actions:hover,
 .json-float-actions:focus-within {
   opacity: 1;
 }
 .json-float-actions button {
-  height: 23px;
+  height: 28px;
   padding: 0 8px;
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--text);
   border-radius: 3px;
   white-space: nowrap;
 }
@@ -320,23 +330,20 @@ footer .outline-toggle:hover {
   color: var(--accent);
   background: var(--selected);
 }
-.json-source-pane .cm-line {
-  padding-right: 150px;
-}
 .notice {
   padding: 7px 30px;
   background: var(--selected);
   font-size: 11px;
 }
 footer {
-  height: 29px;
+  height: 32px;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 19px;
+  gap: 12px;
   padding: 0 19px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   justify-content: flex-end;
 }
@@ -353,4 +360,23 @@ footer {
   color: var(--text);
   box-shadow: 0 8px 24px #0002;
   overflow-wrap: anywhere;
+}
+.status-toast.error {
+  border-color: var(--danger);
+}
+.status-toast .dismiss-toast {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  margin-left: 8px;
+}
+.status-toast {
+  display: flex;
+  align-items: center;
+}
+.json-preview-pane .json-float-actions {
+  min-height: 32px;
+}
+.source-pane > .preview {
+  border-left: 0;
 }

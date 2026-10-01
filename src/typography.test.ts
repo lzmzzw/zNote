@@ -16,7 +16,7 @@ describe('document typography', () => {
   });
   it('shares local Latin and Chinese font fallbacks across all document formats', () => {
     const tokens = css('tokens');
-    expect(tokens).toContain("--font-document: 'Cascadia Code', Consolas, 'Source Han Sans SC', 'Source Han Sans CN', '思源黑体', 'Microsoft YaHei', monospace;");
+    expect(tokens.replace(/\s+/g, ' ')).toContain("--font-document: 'Cascadia Code', Consolas, 'Source Han Sans SC', 'Source Han Sans CN', '思源黑体', 'Microsoft YaHei', monospace;");
     expect(tokens).toContain('--font-reading: var(--font-document);');
     expect(tokens).toContain('--font-mono: var(--font-document);');
     expect(tokens).not.toContain("font-family: 'zNote Mono SC'");
@@ -30,10 +30,10 @@ describe('document typography', () => {
     expect(css('content')).toMatch(/\.preview :not\(pre\) > code\s*\{[^}]*font-size: var\(--font-size-code\)/);
   });
 
-  it('anchors fixed-size JSON actions to the center of the first 1.6-height line', () => {
+  it('keeps the requested editor inset and places JSON actions outside document lines', () => {
     const chrome = css('chrome');
-    expect(chrome).toMatch(/\.json-float-actions\s*\{[^}]*top: calc\(6px \+ var\(--font-size-code\) \* 0\.8\)/);
-    expect(chrome).toMatch(/\.json-float-actions\s*\{[^}]*transform: translateY\(-50%\)/);
-    expect(chrome).toMatch(/\.json-float-actions button\s*\{[^}]*height: 23px/);
+    expect(css('editor')).toContain('padding: 6px 6px 100px !important;');
+    expect(chrome).toMatch(/\.json-float-actions\s*\{[^}]*position: relative/);
+    expect(chrome).not.toContain('padding-right: 150px');
   });
 });

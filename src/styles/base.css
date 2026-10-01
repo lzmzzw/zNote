@@ -20,14 +20,55 @@ button {
 }
 button:disabled {
   opacity: 0.4;
-  cursor: wait;
+  cursor: default;
 }
 button:focus-visible {
-  outline: 2px solid #4a806e;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 button:hover {
   background: var(--hover);
+}
+button {
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+button:not(:disabled):active {
+  background: var(--selected);
+}
+button:disabled:hover {
+  background: none;
+}
+[aria-busy='true'] {
+  cursor: progress;
+}
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.menu-popup,
+.context-menu,
+.option-popup,
+.modal,
+.status-toast {
+  animation: surface-enter var(--duration-panel) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 .app {
   height: 100vh;
