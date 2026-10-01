@@ -725,6 +725,7 @@ function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.ma
   const text = doc?.text ?? '';
   const noteName = doc?.path?.split(/[\\/]/).pop() ?? name;
   const format = formatForName(noteName);
+  const state = stateFor(text, format);
   const { text: _text, ...metadata } = doc ?? { text: '' };
   const note: Note = {
     path: null,
@@ -738,8 +739,8 @@ function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.ma
     format,
     mode: defaultMode(format),
     markdownWidth: 'standard',
-    state: stateFor(text, format),
-    saved: text,
+    state,
+    saved: state.doc.toString(),
     version: 0,
     dirty: false,
     metaDirty: false,
@@ -1400,7 +1401,7 @@ onMounted(async () => {
           ...doc,
           id: nextId++,
           state: stateFor(doc.editor.doc, doc.format, doc.editor),
-          saved: doc.saved ?? doc.editor.doc,
+          saved: EditorState.create({ doc: doc.saved ?? doc.editor.doc }).doc.toString(),
           version: 0,
         }));
         const names = restored.map((note) => note.name);

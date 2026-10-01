@@ -49,6 +49,17 @@ beforeEach(() => {
   writeText.mockClear(); readText.mockClear();
 });
 describe('window controls', () => {
+  it('keeps a CRLF CSV clean when opened, switched and restored, but detects edits', async () => {
+    await mount(); await openDoc('windows.csv', 'name,value\r\na,1\r\n');
+    expect(root.querySelector('[role="tab"][aria-label="windows.csv，已保存"]')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[aria-label="源码"]')!.click(); await nextTick();
+    root.querySelector<HTMLButtonElement>('[aria-label="分屏"]')!.click(); await nextTick();
+    expect(root.querySelector('[role="tab"][aria-label="windows.csv，已保存"]')).not.toBeNull();
+    await close(); unmount(); await mount();
+    expect(root.querySelector('[role="tab"][aria-label="windows.csv，已保存"]')).not.toBeNull();
+    editor().dispatch({ changes: { from: 0, insert: 'edited' } }); await nextTick();
+    expect(root.querySelector('[role="tab"][aria-label="windows.csv，未保存"]')).not.toBeNull();
+  });
   it('shows a single close control without an automatic close tooltip in About', async () => {
     await mount();
     root.querySelectorAll<HTMLButtonElement>('.app-menu > .menu-group > button')[3].click(); await nextTick();
