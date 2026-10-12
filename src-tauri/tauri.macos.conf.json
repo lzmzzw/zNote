@@ -19,7 +19,7 @@
     ]
   },
   "bundle": {
-    "targets": ["dmg"],
+    "targets": ["app", "dmg"],
     "icon": ["icons/icon.icns"],
     "macOS": {
       "minimumSystemVersion": "12.0",

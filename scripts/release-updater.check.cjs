@@ -28,6 +28,23 @@ const assets = names.map(name => ({ name,
 const options = { tag: 'v0.1.5', assets, readSignature: async asset => `signature:${asset.name}\n`,
   notes: 'Release notes', publishedAt: '2026-10-12T00:00:00Z' };
 
+test('macOS CI and local bundle targets can produce both updater archives and installers', () => {
+  // CI 的 --bundles 会覆盖配置 targets，必须分别检查两条构建入口。
+  const matrix = workflow.join('\n').match(/          - os: macos-[^\n]+\n((?:            [^\n]*\n)+)/);
+  assert.ok(matrix, 'macOS release matrix entry must exist');
+  assert.match(matrix[1], /target: aarch64-apple-darwin/);
+  const bundles = matrix[1].match(/bundles: ([^\n]+)/)?.[1].trim().split(',');
+  assert.ok(bundles?.includes('app'), 'CI --bundles must include app to produce updater artifacts');
+  assert.ok(bundles.includes('dmg'), 'CI must also produce the macOS installer');
+  assert.ok(workflow.some(line => line.includes('--bundles ${{ matrix.bundles }}')),
+    'tauri-action must use the verified matrix bundle targets');
+  const config = JSON.parse(readFileSync(join(repoRoot, 'src-tauri/tauri.macos.conf.json'), 'utf8'));
+  const base = JSON.parse(readFileSync(join(repoRoot, 'src-tauri/tauri.conf.json'), 'utf8'));
+  assert.equal(config.bundle.createUpdaterArtifacts ?? base.bundle.createUpdaterArtifacts, true);
+  assert.ok(config.bundle.targets.includes('app'), 'local macOS builds must produce updater artifacts');
+  assert.ok(config.bundle.targets.includes('dmg'), 'local macOS builds must produce the installer');
+});
+
 test('Windows and macOS updater URLs retain their own signed payloads', async () => {
   const metadata = await createUpdaterMetadata(options);
   assert.equal(metadata.version, '0.1.5');

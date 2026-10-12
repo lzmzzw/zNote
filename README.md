@@ -1,6 +1,6 @@
 # zNote
 
-个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.5**，支持 Windows x64 与 macOS arm64。
+个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.6**，支持 Windows x64 与 macOS arm64。
 
 界面使用 Segoe UI 搭配内置 Noto Sans SC。所有格式的文档编辑区与预览区统一使用本机字体：英文优先 Cascadia Code，未安装时使用 Consolas；中文优先思源黑体（Source Han Sans SC / CN），未安装时使用微软雅黑。正文、代码块和行内代码默认均为 14 px，可在“帮助 → 设置 → 字体大小”中调整为 10–32 px 的整数，对所有标签即时生效并在重启后保留；Markdown 标题按正文字号成比例调整。TXT、LOG 和 Markdown 正文行高为 1.7，JSON/CSV 等结构化文本行高为 1.6。JSON 两侧操作位于独立工具区，不覆盖正文。此设置不改变菜单等界面字号，也不改变导出文件的字体与排版。
 
@@ -90,9 +90,9 @@ pwsh -NoProfile -File scripts/collect-licenses.ps1
 pwsh -NoProfile -File scripts/build.ps1
 ```
 
-`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.5_x64-setup.exe`。NSIS 安装范围为当前用户。macOS arm64 由 GitHub Actions 在 `aarch64-apple-darwin` runner 上生成 `.dmg` 和签名 updater 归档；依赖升级后重新收集许可再打包。
+`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.6_x64-setup.exe`。NSIS 安装范围为当前用户。macOS arm64 由 GitHub Actions 在 `aarch64-apple-darwin` runner 上生成 `.dmg` 和签名 updater 归档；依赖升级后重新收集许可再打包。
 
-macOS 本地构建需要 Xcode Command Line Tools、Rust stable 与 `aarch64-apple-darwin` target，以及相同的 Node.js / pnpm；运行 `pnpm tauri build --target aarch64-apple-darwin --bundles dmg`，Tauri 会自动合并 `src-tauri/tauri.macos.conf.json`。发布元数据检查使用 `node --test scripts/release-updater.check.cjs`。
+macOS 本地构建需要 Xcode Command Line Tools、Rust stable 与 `aarch64-apple-darwin` target，以及相同的 Node.js / pnpm；运行 `pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg`，Tauri 会自动合并 `src-tauri/tauri.macos.conf.json`。必须包含 `app` 目标才能生成 updater 所需的 `.app.tar.gz` 和签名；仅构建 `dmg` 不会生成更新归档。发布配置与元数据检查使用 `node --test scripts/release-updater.check.cjs`。
 
 推送与应用版本一致的 `vX.Y.Z` tag 会触发 `.github/workflows/release.yml`，在 GitHub Actions 并行构建 Windows NSIS 与 macOS arm64 DMG/updater 签名，随后按 `platforms` 分别生成 `latest.json`。仓库 secret `TAURI_SIGNING_PRIVATE_KEY` 保存对应私钥；本地打包更新产物时需设置同名环境变量。正式更新验证须从较低版本的安装版执行“检查更新”，确认下载、安装、重启后的帮助菜单版本号。
 

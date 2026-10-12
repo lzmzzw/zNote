@@ -59,7 +59,8 @@ jobs:
             config: ''
           - os: macos-latest
             target: aarch64-apple-darwin
-            bundles: dmg
+            # app 是 updater 归档的来源，单独打 dmg 不会生成更新包及签名。
+            bundles: app,dmg
             config: --config src-tauri/tauri.macos.conf.json
     runs-on: ${{ matrix.os }}
     steps:
