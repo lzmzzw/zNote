@@ -41,6 +41,77 @@ main {
   background: #c94b47;
   color: white;
 }
+
+/* macOS 使用系统提供的左侧 traffic lights；内容延伸到 overlay title bar，
+   菜单和拖拽区域保持与原生窗口控件错开。 */
+.app.macos {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'zNote Sans SC', sans-serif;
+  --font-document: Menlo, Monaco, 'Source Han Sans SC', 'Source Han Sans CN', 'PingFang SC', monospace;
+  --titlebar-bg: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+.app.macos .titlebar {
+  position: relative;
+  height: 52px;
+  padding-left: 84px;
+  padding-right: 12px;
+  border-bottom-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--titlebar-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+.app.macos .titlebar-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+  opacity: 0.9;
+}
+.app.macos .app-menu .menu-group > button {
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.app.macos .titlebar-drag {
+  min-width: 24px;
+}
+.app.macos .titlebar-document {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 610px);
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  pointer-events: none;
+}
+.titlebar-document-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.titlebar-document-dirty {
+  flex: none;
+  color: var(--muted);
+  font-size: 8px;
+}
+.app.macos kbd {
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+.app.macos .focus-toggle {
+  margin-right: 0;
+  border-radius: 6px;
+}
+.app.macos .tabs {
+  height: 38px;
+}
+.app.macos footer {
+  height: 30px;
+}
 /* 文档大纲 */
 .sidebar {
   width: 246px;

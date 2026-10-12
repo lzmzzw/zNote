@@ -3,7 +3,7 @@ import 'katex/dist/katex.min.css';
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, undo, redo } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { bracketMatching } from '@codemirror/language';
@@ -12,7 +12,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import packageJson from '../package.json';
 import { check, type Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { relaunch, exit } from '@tauri-apps/plugin-process';
 import { listen } from '@tauri-apps/api/event';
 import {
   FilePlus2,
@@ -288,6 +288,7 @@ let recoveryLoadFailed = false;
 let restoringScroll = false;
 let unlisten: (() => void) | undefined;
 let unlistenAssociated: (() => void) | undefined;
+let unlistenMenu: (() => void) | undefined;
 let openingAssociated = false;
 let pendingAssociated = false;
 const closePrompt = shallowRef<{ note: Note } | null>(null);
@@ -612,6 +613,8 @@ function onContextMenu(event: MouseEvent) {
   }
 }
 const native = isTauri();
+const isMac = /Macintosh|Mac OS X/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
+const modifierLabel = isMac ? '⌘' : 'Ctrl';
 const maximized = ref(false);
 let unlistenResize: (() => void) | undefined;
 async function syncMaximized() {
@@ -1308,7 +1311,10 @@ async function persistAndClose() {
   closingWindow.value = true;
   view?.dispatch({ effects: editability.reconfigure([EditorView.editable.of(false), EditorState.readOnly.of(true)]) });
   try {
-    if (await persistRecovery()) await getCurrentWindow().destroy();
+    if (await persistRecovery()) {
+      if (isMac) await exit(0);
+      else await getCurrentWindow().destroy();
+    }
   } catch (error) {
     status.value = `退出失败：${error}`;
   } finally {
@@ -1346,6 +1352,21 @@ function shortcuts(event: KeyboardEvent) {
   }
   if (settings.value || aboutOpen.value || !(event.ctrlKey || event.metaKey)) return;
   const key = event.key.toLowerCase();
+  if (isMac && event.metaKey && !event.altKey) {
+    if (key === ',') {
+      event.preventDefault();
+      menu.value = null;
+      settings.value = 'general';
+      return;
+    }
+    if (key === 'q') {
+      event.preventDefault();
+      if (native) void persistAndClose();
+      return;
+    }
+    // ⌘H 是系统隐藏应用快捷键，不能被 WebView 的替换面板截获。
+    if (key === 'h') return;
+  }
   if (key === 'enter' && event.shiftKey) {
     event.preventDefault();
     toggleFocusMode();
@@ -1484,7 +1505,7 @@ onMounted(async () => {
       touch();
       scheduleRecovery();
     }
-    status.value = `${{ format: '已格式化', escape: '已转义', unescape: '已去除转义' }[pending.operation]} · Ctrl + Z 可撤销`;
+    status.value = `${{ format: '已格式化', escape: '已转义', unescape: '已去除转义' }[pending.operation]} · ${modifierLabel} + Z 可撤销`;
   };
   window.addEventListener('keydown', shortcuts);
   sessionReady = true;
@@ -1496,6 +1517,26 @@ onMounted(async () => {
     unlistenAssociated = await listen('associated-file-open', () => {
       void openAssociatedFiles();
     });
+    if (isMac) {
+      unlistenMenu = await listen<string>('native-menu-action', ({ payload }) => {
+        if (payload === 'quit') void persistAndClose();
+        if (payload === 'settings' && !closingWindow.value) {
+          menu.value = null;
+          settings.value = 'general';
+        }
+        if (payload === 'about' && !closingWindow.value) {
+          menu.value = null;
+          aboutOpen.value = true;
+        }
+        if (!busy.value && !closingWindow.value && !settings.value && !aboutOpen.value && !closePrompt.value && view) {
+          if (payload === 'close-tab' && active.value) requestClose(active.value);
+          if (payload === 'undo' || payload === 'redo') {
+            if (view.hasFocus) (payload === 'undo' ? undo : redo)(view);
+            else document.execCommand(payload);
+          }
+        }
+      });
+    }
     await openAssociatedFiles();
     scheduleRecovery();
   }
@@ -1507,6 +1548,7 @@ onBeforeUnmount(() => {
   worker?.terminate();
   unlisten?.();
   unlistenAssociated?.();
+  unlistenMenu?.();
   unlistenResize?.();
   clearTimeout(refreshTimer);
   clearTimeout(recoveryTimer);
@@ -1519,7 +1561,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="app"
-    :class="{ dark, 'focus-mode': focusMode }"
+    :class="{ dark, 'focus-mode': focusMode, macos: isMac }"
     :style="documentFontStyle"
     :inert="closingWindow"
     @contextmenu.capture="onContextMenu"
@@ -1538,7 +1580,7 @@ onBeforeUnmount(() => {
                 newNote();
               "
             >
-              <FilePlus2 :size="15" />新建 <kbd>Ctrl+N</kbd></button
+              <FilePlus2 :size="15" />新建 <kbd>{{ modifierLabel }}+N</kbd></button
             ><button
               :disabled="busy"
               @click="
@@ -1546,7 +1588,7 @@ onBeforeUnmount(() => {
                 openFile();
               "
             >
-              <FolderOpen :size="15" />打开 <kbd>Ctrl+O</kbd></button
+              <FolderOpen :size="15" />打开 <kbd>{{ modifierLabel }}+O</kbd></button
             ><button
               :disabled="busy"
               @click="
@@ -1554,7 +1596,7 @@ onBeforeUnmount(() => {
                 saveNote();
               "
             >
-              <Save :size="15" />保存 <kbd>Ctrl+S</kbd></button
+              <Save :size="15" />保存 <kbd>{{ modifierLabel }}+S</kbd></button
             ><button
               :disabled="busy"
               @click="
@@ -1562,7 +1604,7 @@ onBeforeUnmount(() => {
                 saveNote(active, true);
               "
             >
-              <Save :size="15" />另存为 <kbd>Ctrl+Shift+S</kbd>
+              <Save :size="15" />另存为 <kbd>{{ modifierLabel }}+Shift+S</kbd>
             </button>
             <hr />
             <details class="export-submenu">
@@ -1575,15 +1617,15 @@ onBeforeUnmount(() => {
         <div class="menu-group">
           <button :aria-expanded="menu === 'edit'" @click="toggleMenu('edit')">编辑</button>
           <div v-if="menu === 'edit'" class="menu-popup">
-            <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>Ctrl+C</kbd></button
-            ><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>Ctrl+X</kbd></button
-            ><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>Ctrl+V</kbd></button
+            <button @click="clipboardAction('copy')"><Copy :size="15" />复制 <kbd>{{ modifierLabel }}+C</kbd></button
+            ><button @click="clipboardAction('cut')"><Scissors :size="15" />剪切 <kbd>{{ modifierLabel }}+X</kbd></button
+            ><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴 <kbd>{{ modifierLabel }}+V</kbd></button
             ><button @click="clipboardAction('paste')"><ClipboardPaste :size="15" />粘贴为纯文本</button>
             <hr />
-            <button @click="searchPanel()"><Search :size="15" />查找与替换 <kbd>Ctrl+F</kbd></button>
+            <button @click="searchPanel()"><Search :size="15" />查找与替换 <kbd>{{ modifierLabel }}+F</kbd></button>
             <hr />
             <button :aria-pressed="focusMode" @click="toggleFocusMode">
-              <Focus :size="15" />专注模式 <kbd>Ctrl+Shift+Enter</kbd>
+              <Focus :size="15" />专注模式 <kbd>{{ modifierLabel }}+Shift+Enter</kbd>
             </button>
           </div>
         </div>
@@ -1657,6 +1699,10 @@ onBeforeUnmount(() => {
         </div>
       </nav>
       <div class="titlebar-drag" data-tauri-drag-region></div>
+      <div v-if="isMac" class="titlebar-document" data-tauri-drag-region>
+        <span class="titlebar-document-name" data-tauri-drag-region>{{ active?.name ?? 'zNote' }}</span>
+        <span v-if="active && needsSave(active.path, active.dirty)" class="titlebar-document-dirty" aria-label="未保存" data-tauri-drag-region>●</span>
+      </div>
       <button
         class="focus-toggle"
         :aria-label="focusMode ? '退出专注模式' : '进入专注模式'"
@@ -1666,7 +1712,7 @@ onBeforeUnmount(() => {
       >
         <Focus :size="16" />
       </button>
-      <div v-if="native" class="window-controls">
+      <div v-if="native && !isMac" class="window-controls">
         <button aria-label="最小化" @click="getCurrentWindow().minimize()">
           <Minus :size="16" /></button
         ><button :aria-label="maximized ? '还原' : '最大化'" @click="toggleMaximized">

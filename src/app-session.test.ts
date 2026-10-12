@@ -16,8 +16,9 @@ const bridge = vi.hoisted(() => ({
   saveArgs: null as unknown,
   maximized: false,
   resized: undefined as undefined | (() => void),
+  menu: undefined as undefined | ((event: { payload: string }) => void),
 }));
-const updater = vi.hoisted(() => ({ check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn(), relaunch: vi.fn() }));
+const updater = vi.hoisted(() => ({ check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn(), relaunch: vi.fn(), exit: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => true,
   invoke: vi.fn(async (command: string, args?: { data?: unknown }) => {
@@ -52,10 +53,15 @@ vi.mock('@tauri-apps/api/window', () => ({
     destroy: bridge.destroy,
   }),
 }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: async (name: string, handler: (event: { payload: string }) => void) => {
+    if (name === 'native-menu-action') bridge.menu = handler;
+    return () => {};
+  },
+}));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.2' }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
-vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: updater.relaunch }));
+vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: updater.relaunch, exit: updater.exit }));
 let app: VueApp | undefined;
 let root: HTMLDivElement;
 const writeText = vi.fn(async (_text: string) => {});
@@ -97,7 +103,9 @@ beforeEach(() => {
   bridge.saveArgs = null;
   bridge.maximized = false;
   bridge.resized = undefined;
+  bridge.menu = undefined;
   bridge.destroy.mockClear();
+  updater.exit.mockClear();
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -126,6 +134,79 @@ beforeEach(() => {
   readText.mockClear();
 });
 describe('window controls', () => {
+  it('uses macOS chrome and Command shortcuts without intercepting Hide', async () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      await mount();
+      expect(root.querySelector('.app.macos')).not.toBeNull();
+      expect(root.querySelector('.window-controls')).toBeNull();
+      expect(root.querySelector('.titlebar-document')?.textContent).toContain('未命名1.txt');
+      root.querySelector<HTMLButtonElement>('.app-menu .menu-group > button')!.click();
+      await nextTick();
+      expect(root.querySelector('.menu-popup kbd')?.textContent).toBe('⌘+N');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, bubbles: true }));
+      await nextTick();
+      expect(root.querySelectorAll('[role="tab"]')).toHaveLength(2);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', metaKey: true, bubbles: true }));
+      await nextTick();
+      expect(root.querySelector('.cm-search')).toBeNull();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true }));
+      await nextTick();
+      expect(root.querySelector('[role="dialog"]')).not.toBeNull();
+    } finally {
+      platform.mockRestore();
+    }
+  });
+  it('persists edits before Command-Q exits on macOS, and blocks exit on failure', async () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      await mount();
+      editor().dispatch({ changes: { from: 0, insert: 'macOS unsaved text' } });
+      bridge.fail = true;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', metaKey: true, bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(bridge.destroy).not.toHaveBeenCalled();
+      expect(updater.exit).not.toHaveBeenCalled();
+      bridge.fail = false;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', metaKey: true, bubbles: true }));
+      await vi.waitFor(() => expect(updater.exit).toHaveBeenCalledWith(0));
+      expect(JSON.stringify(bridge.data)).toContain('macOS unsaved text');
+    } finally {
+      platform.mockRestore();
+    }
+  });
+  it('routes native macOS menu and Dock quit through recovery', async () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      await mount();
+      editor().dispatch({ changes: { from: 0, insert: 'native quit text' } });
+      bridge.menu!({ payload: 'settings' });
+      await nextTick();
+      expect(root.querySelector('[role="dialog"]')).not.toBeNull();
+      bridge.menu!({ payload: 'quit' });
+      await vi.waitFor(() => expect(updater.exit).toHaveBeenCalledWith(0));
+      expect(JSON.stringify(bridge.data)).toContain('native quit text');
+      expect(bridge.destroy).not.toHaveBeenCalled();
+    } finally {
+      platform.mockRestore();
+    }
+  });
+  it('closes only the current tab from the native macOS Command-W menu', async () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      await mount();
+      await openDoc('first.txt', 'first');
+      await openDoc('second.txt', 'second');
+      bridge.menu!({ payload: 'close-tab' });
+      await nextTick();
+      expect(root.querySelector('[role="tab"][aria-label="second.txt，已保存"]')).toBeNull();
+      expect(root.querySelector('[role="tab"][aria-label="first.txt，已保存"]')).not.toBeNull();
+      expect(updater.exit).not.toHaveBeenCalled();
+      expect(bridge.destroy).not.toHaveBeenCalled();
+    } finally {
+      platform.mockRestore();
+    }
+  });
   it.each(['large.md', 'large.json', 'large.jsonc', 'large.geojson'])(
     'opens %s as plain TXT and restores the fallback',
     async (name) => {

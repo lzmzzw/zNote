@@ -1,8 +1,10 @@
 # zNote
 
-个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.4**，面向 Windows x64。
+个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.5**，支持 Windows x64 与 macOS arm64。
 
 界面使用 Segoe UI 搭配内置 Noto Sans SC。所有格式的文档编辑区与预览区统一使用本机字体：英文优先 Cascadia Code，未安装时使用 Consolas；中文优先思源黑体（Source Han Sans SC / CN），未安装时使用微软雅黑。正文、代码块和行内代码默认均为 14 px，可在“帮助 → 设置 → 字体大小”中调整为 10–32 px 的整数，对所有标签即时生效并在重启后保留；Markdown 标题按正文字号成比例调整。TXT、LOG 和 Markdown 正文行高为 1.7，JSON/CSV 等结构化文本行高为 1.6。JSON 两侧操作位于独立工具区，不覆盖正文。此设置不改变菜单等界面字号，也不改变导出文件的字体与排版。
+
+macOS 界面优先使用系统字体，文档英文优先 Menlo / Monaco，中文优先思源黑体并回退到苹方。标题栏左侧保留系统红黄绿按钮（关闭、最小化、全屏），文档名与未保存圆点居中；菜单与专注按钮避让窗口控件。系统菜单提供设置、隐藏、退出、编辑与窗口操作。Finder 打开文件复用已有文本格式识别，退出前保存恢复会话。
 
 ## 首版功能
 
@@ -29,6 +31,8 @@
 | Ctrl+W | 关闭当前标签，未保存时提示 |
 | Ctrl+F | 查找与替换 |
 | Ctrl+Z / Ctrl+Y | 撤销 / 重做 |
+
+macOS 对应使用 Command（⌘），重做为 ⌘+Shift+Z；⌘+, 打开设置，⌘+Q 保存恢复会话后退出，⌘+H 保留系统隐藏应用行为。界面菜单按平台显示快捷键。
 
 编辑菜单的复制、剪切、粘贴和纯文本粘贴针对当前编辑器选区；“查找与替换”打开右上悬浮面板，拖动标题可临时移位，关闭后重新打开回到右上角。帮助菜单显示当前安装版本；安装版的“检查更新”从 GitHub Releases 获取签名更新包，发现新版本后自动后台下载，下载期间可继续编辑；检查更新按钮右侧显示下载百分比（服务器未提供总大小时显示“下载中…”）。下载完成后保存最新恢复会话、安装并重启；下载失败可重新检查更新。操作结果以短暂提示显示。浏览器开发预览只验证编辑界面，本地打开、保存、恢复与更新需要桌面版。
 
@@ -69,6 +73,7 @@ CSV 设置和查找替换的复选框使用统一主题外观，保留原生勾�
 - 混合换行文件必须在帮助菜单“设置”中明确选择 LF/CRLF/CR 后保存。无 BOM UTF-16 不自动猜测。GBK 无法表示的字符会拒绝保存，可切换 UTF-8。
 - 保存前两次检查 revision，可检测通常的外部修改；检查与替换之间极短的跨进程竞争窗口不具备完整 CAS 保证。另存为覆盖以原生对话框确认为准。
 - 使用系统 WebView2。更新包使用 Tauri updater 密钥签名；Windows 安装程序未配置代码签名证书。不自动更改默认文件关联。
+- macOS 使用系统 WKWebView，最低 macOS 12.0，发布 arm64 DMG。应用采用 ad-hoc 代码签名，未配置 Apple Developer ID 签名与公证；首次打开下载的应用可能受到 Gatekeeper 限制。updater 归档另有 Tauri 签名，两者用途不同。
 
 ## 开发与构建
 
@@ -85,9 +90,11 @@ pwsh -NoProfile -File scripts/collect-licenses.ps1
 pwsh -NoProfile -File scripts/build.ps1
 ```
 
-`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.4_x64-setup.exe`。NSIS 安装范围为当前用户。依赖升级后重新收集许可再打包。
+`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.5_x64-setup.exe`。NSIS 安装范围为当前用户。macOS arm64 由 GitHub Actions 在 `aarch64-apple-darwin` runner 上生成 `.dmg` 和签名 updater 归档；依赖升级后重新收集许可再打包。
 
-推送与应用版本一致的 `vX.Y.Z` tag 会触发 `.github/workflows/release.yml`，在 GitHub Actions 构建 Windows NSIS 安装包和 updater 签名，并发布 `latest.json`。仓库 secret `TAURI_SIGNING_PRIVATE_KEY` 保存对应私钥；本地打包更新产物时需设置同名环境变量。正式更新验证须从较低版本的安装版执行“检查更新”，确认下载、安装、重启后的帮助菜单版本号。
+macOS 本地构建需要 Xcode Command Line Tools、Rust stable 与 `aarch64-apple-darwin` target，以及相同的 Node.js / pnpm；运行 `pnpm tauri build --target aarch64-apple-darwin --bundles dmg`，Tauri 会自动合并 `src-tauri/tauri.macos.conf.json`。发布元数据检查使用 `node --test scripts/release-updater.check.cjs`。
+
+推送与应用版本一致的 `vX.Y.Z` tag 会触发 `.github/workflows/release.yml`，在 GitHub Actions 并行构建 Windows NSIS 与 macOS arm64 DMG/updater 签名，随后按 `platforms` 分别生成 `latest.json`。仓库 secret `TAURI_SIGNING_PRIVATE_KEY` 保存对应私钥；本地打包更新产物时需设置同名环境变量。正式更新验证须从较低版本的安装版执行“检查更新”，确认下载、安装、重启后的帮助菜单版本号。
 
 ## 界面品质与桌面布局
 

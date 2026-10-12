@@ -1,5 +1,7 @@
 mod commands;
 mod document;
+#[cfg(any(target_os = "macos", test))]
+mod macos;
 mod recovery;
 use commands::{native_export, native_open, native_save};
 use document::Document;
@@ -115,6 +117,8 @@ pub fn run() {
         .manage(Writes::default())
         .manage(OpenRequests::default())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            macos::setup(app.handle())?;
             let cwd = std::env::current_dir()?;
             queue_open_paths(
                 &app.state::<OpenRequests>(),
@@ -131,8 +135,12 @@ pub fn run() {
             recovery_load,
             recovery_save
         ])
-        .run(tauri::generate_context!())
-        .expect("无法启动 zNote");
+        .build(tauri::generate_context!())
+        .expect("无法启动 zNote")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            macos::on_run_event(_app, &_event);
+        });
 }
 
 #[cfg(test)]
