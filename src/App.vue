@@ -1910,7 +1910,7 @@ onBeforeUnmount(() => {
       <div class="about-brand">
         <img src="/znote.svg" alt="" width="44" height="44" />
         <div>
-          <strong>zNote</strong><span>版本 {{ appVersion }} · Windows x64</span>
+          <strong>zNote</strong><span>版本 {{ appVersion }} · {{ isMac ? 'macOS arm64' : 'Windows x64' }}</span>
         </div>
       </div>
       <p>GNU GPL v3.0</p>
