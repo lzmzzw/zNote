@@ -63,7 +63,8 @@ pub(crate) async fn native_save(
             {
                 dialog.add_filter("当前格式", &[other])
             }
-            _ => dialog.add_filter("所有文件", &["*"]),
+            // 不设过滤器，避免 rfd 将通配符当作默认扩展名，生成 Dockerfile.*。
+            _ => dialog,
         };
         if let Some(p) = &old {
             if let Some(n) = p.file_name() {
