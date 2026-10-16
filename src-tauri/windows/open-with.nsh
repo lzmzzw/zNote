@@ -1,4 +1,5 @@
-; 仅注册可选打开入口，不写扩展名默认值、DefaultIcon 或 Explorer UserChoice。
+; 仅注册可选打开入口，不写扩展名默认值或 Explorer UserChoice。
+; TXT/Markdown/CSV 图标仅写入各自的 zNote ProgID，不修改其他应用图标。
 !macro ZNOTE_ADD_OPEN_WITH EXT
   WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\SupportedTypes" ".${EXT}" ""
   WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithList\${MAINBINARYNAME}.exe" "" ""
@@ -27,12 +28,14 @@
 !macroend
 
 !include "${__FILEDIR__}\text-extensions.nsh"
+!include "${__FILEDIR__}\file-icons.nsh"
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro ZNOTE_LEGACY_EXTENSIONS ZNOTE_RESTORE_LEGACY
   WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe" "FriendlyAppName" "zNote"
   WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\shell\open\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
   !insertmacro ZNOTE_TEXT_EXTENSIONS ZNOTE_ADD_OPEN_WITH
+  !insertmacro ZNOTE_REGISTER_FILE_ICONS
   ; 任意扩展名和 Dockerfile 等无扩展名文件也有显式入口，不更改双击行为。
   WriteRegStr SHCTX "Software\Classes\*\shell\zNote.OpenAsText" "" "使用 zNote 打开"
   WriteRegStr SHCTX "Software\Classes\*\shell\zNote.OpenAsText\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
@@ -40,6 +43,7 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  !insertmacro ZNOTE_UNREGISTER_FILE_ICONS
   !insertmacro ZNOTE_TEXT_EXTENSIONS ZNOTE_REMOVE_OPEN_WITH
   DeleteRegKey SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe"
   DeleteRegKey SHCTX "Software\Classes\*\shell\zNote.OpenAsText"

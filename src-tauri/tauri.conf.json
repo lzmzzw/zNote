@@ -47,7 +47,8 @@
     },
     "resources": [
       "../THIRD_PARTY_NOTICES.txt",
-      "../resources/licenses/"
+      "../resources/licenses/",
+      "icons/file-types/*.ico"
     ]
   },
   "plugins": {

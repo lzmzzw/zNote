@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<path d="M48 14h108l52 52v157a19 19 0 0 1-19 19H48a19 19 0 0 1-19-19V33a19 19 0 0 1 19-19Z" fill="#fff" stroke="#258451" stroke-width="9" stroke-linejoin="round"/>
+<path d="M156 14v37a15 15 0 0 0 15 15h37" fill="#258451" fill-opacity=".16" stroke="#258451" stroke-width="9" stroke-linejoin="round"/>
+<rect x="66" y="72" width="104" height="77" rx="5" fill="none" stroke="#258451" stroke-width="9"/><path d="M67 97h102M67 123h102M103 73v75M137 73v75" stroke="#258451" stroke-width="7"/>
+<path d="M29 171h179v52a19 19 0 0 1-19 19H48a19 19 0 0 1-19-19Z" fill="#258451"/>
+<text x="119" y="222" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" fill="white">CSV</text>
+</svg>
