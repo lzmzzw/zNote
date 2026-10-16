@@ -2,6 +2,7 @@
 import 'katex/dist/katex.min.css';
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick } from 'vue';
 import { EditorState, Compartment } from '@codemirror/state';
+import { multipleSelection } from './editor/multi-selection';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, undo, redo } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -335,30 +336,26 @@ function lineRange(note: Note, start: number, end: number) {
 function onContextPointer(event: MouseEvent) {
   if (event.button === 2) event.preventDefault();
 }
-async function editorClipboard(action: 'copy' | 'cut' | 'paste', note: Note, selection = note.state.selection.main) {
+async function editorClipboard(action: 'copy' | 'cut' | 'paste', note: Note, selection = note.state.selection) {
   const version = note.version;
   const valid = () =>
     active.value === note &&
     notes.value.includes(note) &&
     note.version === version &&
+    note.state.selection.eq(selection) &&
     !busy.value &&
     !closingWindow.value;
   try {
     if (action === 'paste') {
       const text = await navigator.clipboard.readText();
       if (!valid()) return;
-      view?.dispatch({
-        changes: { from: selection.from, to: selection.to, insert: text },
-        selection: { anchor: selection.from + text.length },
-        userEvent: 'input.paste',
-      });
+      view?.dispatch({ ...note.state.replaceSelection(text), userEvent: 'input.paste' });
     } else {
-      if (selection.empty) return;
-      await navigator.clipboard.writeText(note.state.doc.sliceString(selection.from, selection.to));
+      if (selection.ranges.every(range => range.empty)) return;
+      await navigator.clipboard.writeText(selection.ranges.map(range => note.state.doc.sliceString(range.from, range.to)).join('\n'));
       if (action === 'cut' && valid())
         view?.dispatch({
-          changes: { from: selection.from, to: selection.to },
-          selection: { anchor: selection.from },
+          ...note.state.replaceSelection(''),
           userEvent: 'delete.cut',
         });
     }
@@ -588,18 +585,18 @@ function onContextMenu(event: MouseEvent) {
   if (target.closest('.cm-content, .cm-line, .cm-scroller, .editor-host')) {
     if (event.clientX || event.clientY) {
       const pos = view?.posAtCoords({ x: event.clientX, y: event.clientY });
-      const selection = note.state.selection.main;
-      if (pos != null && (selection.empty || pos < selection.from || pos > selection.to))
+      const selection = note.state.selection;
+      if (pos != null && !selection.ranges.some(range => pos >= range.from && pos <= range.to))
         view?.dispatch({ selection: { anchor: pos } });
     }
-    const selection = note.state.selection.main;
+    const selection = note.state.selection;
     const version = note.version;
     const clipboard = (action: 'copy' | 'cut' | 'paste') => {
       if (active.value === note && note.version === version) return editorClipboard(action, note, selection);
     };
     showContext(event, [
-      { label: '剪切', disabled: selection.empty, action: () => clipboard('cut') },
-      { label: '复制', disabled: selection.empty, action: () => clipboard('copy') },
+      { label: '剪切', disabled: selection.ranges.every(range => range.empty), action: () => clipboard('cut') },
+      { label: '复制', disabled: selection.ranges.every(range => range.empty), action: () => clipboard('copy') },
       { label: '粘贴', action: () => clipboard('paste') },
       { label: '纯文本粘贴', action: () => clipboard('paste') },
       {
@@ -669,6 +666,7 @@ function stateFor(text: string, format: NoteFormat, editor?: SessionNote['editor
       EditorState.phrases.of(editorPhrases),
       history(),
       drawSelection(),
+      multipleSelection(),
       wrapping.of(text.length <= LARGE_DOCUMENT_LIMIT ? EditorView.lineWrapping : []),
       lineNumbers(),
       highlightActiveLine(),

@@ -2,6 +2,7 @@ import { EditorSelection, StateEffect, StateField, type EditorState, type Extens
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
 import { hydrateDiagrams } from './diagram';
 import { markdownBlocks, type MarkdownBlock } from './preview';
+import { rectangleSelection } from './editor/multi-selection';
 
 class MarkdownBlockWidget extends WidgetType {
   constructor(readonly block: MarkdownBlock, readonly from: number, readonly dark: boolean) { super(); }
@@ -46,11 +47,10 @@ interface LiveBlocks { blocks: MarkdownBlock[]; decorations: DecorationSet }
 const revealBlock = StateEffect.define<number>();
 
 function decorate(state: EditorState, blocks: MarkdownBlock[], dark: boolean, revealedLine?: number): DecorationSet {
-  const startLine = state.doc.lineAt(state.selection.main.from).number;
-  const endLine = state.doc.lineAt(state.selection.main.to).number;
+  const selectedLines = state.selection.ranges.map(range => ({ start: state.doc.lineAt(range.from).number, end: state.doc.lineAt(range.to).number }));
   const ranges = [];
   for (const block of blocks) {
-    if (block.endLine >= startLine && block.startLine <= endLine || block.startLine === revealedLine) {
+    if (selectedLines.some(range => block.endLine >= range.start && block.startLine <= range.end) || block.startLine === revealedLine) {
       const heading = /^<h([1-6])\b/.exec(block.html);
       if (heading) ranges.push(Decoration.line({ class: `live-heading live-h${heading[1]}` }).range(state.doc.line(block.startLine).from));
       continue;
@@ -95,6 +95,7 @@ export function liveMarkdownBlocks(dark: boolean): Extension {
     return {
       get(pointer, extend, multiple) {
         const head = position(pointer);
+        if (event.altKey && event.shiftKey) return rectangleSelection(view.state, original.main.anchor, head);
         const range = extend ? original.main.extend(head) : EditorSelection.range(anchor, head);
         return multiple ? original.addRange(range) : EditorSelection.create([range]);
       },

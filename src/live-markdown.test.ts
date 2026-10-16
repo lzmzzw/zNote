@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, test, vi } from 'vitest';
-import { EditorState } from '@codemirror/state';
+import { EditorSelection, EditorState } from '@codemirror/state';
 import { EditorView, type DecorationSet, type WidgetType } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
 import { liveMarkdownBlocks } from './live-markdown';
@@ -30,6 +30,16 @@ test('keeps the active Markdown block editable while rendering other block types
   const moved = state.update({ selection: { anchor: source.indexOf('| Name') } }).state;
   expect(blocks(moved).some(range => range.from === source.indexOf('| Name'))).toBe(false);
   expect(moved.doc.toString()).toBe(source);
+});
+
+test('keeps every block containing a secondary cursor editable', () => {
+  const state = EditorState.create({
+    doc: source,
+    selection: EditorSelection.create([EditorSelection.cursor(0), EditorSelection.cursor(source.indexOf('| Name'))]),
+    extensions: [EditorState.allowMultipleSelections.of(true), markdown(), liveMarkdownBlocks(false)],
+  });
+  expect(blocks(state).some(range => range.from === source.indexOf('| Name'))).toBe(false);
+  expect(blocks(state).some(range => range.from === source.indexOf('```mermaid'))).toBe(true);
 });
 
 test('lets CodeMirror start a drag on rendered text without cancelling the mouse event', () => {
