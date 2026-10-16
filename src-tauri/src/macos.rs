@@ -125,7 +125,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finder_urls_decode_local_names_and_preserve_open_filters() {
+    fn finder_urls_decode_local_names_and_only_accept_local_files() {
         let dir = tempfile::tempdir().unwrap();
         let note = dir.path().join("备忘 录.md");
         let image = dir.path().join("image.png");
@@ -143,7 +143,7 @@ mod tests {
                 note_url.clone(),
             ],
         ));
-        assert_eq!(requests.0.lock().unwrap().as_slice(), &[note]);
+        assert_eq!(requests.0.lock().unwrap().as_slice(), &[note, image]);
         assert!(!queue_open_urls(&requests, &[note_url]));
     }
 }

@@ -8,6 +8,7 @@ zNote 的 Rust 后端仅提供本地文件、会话恢复与单实例关联打�
 - `commands.rs`：原生打开/保存/导出对话框与路径授权；磁盘保存的校验和替换在进程内串行执行，避免并发旧版本互相覆盖。
 - `document.rs`：有界读取、无损编码、换行处理、流式 SHA-256 与原子替换。
 - `recovery.rs`：会话读取、原生授权路径附加与有界序列化。前端仍通过 Promise 链按顺序提交会话快照。
+- `src-tauri/windows/open-with.nsh`：Windows 可选打开方式、通用右键入口、旧版自动关联迁移与卸载清理。`text-extensions.nsh` 仅定义候选扩展名，不是读取白名单；打开队列接受任意扩展名和无扩展名的现存文件，内容由 `document.rs` 解码校验。Windows 主配置不使用会接管默认值和图标的 `bundle.fileAssociations`；macOS 的 Finder 格式声明保留在平台覆盖配置中。
 
 对话框保持异步；文件读写、内容哈希、编码和恢复 JSON 处理放入 Tauri blocking 工作线程，不在同步命令中执行长时间文件操作。工作线程错误传播到前端；不持有授权集合锁跨越文件 IO 或 await。保持既有 IPC 参数与返回字段，capability、CSP 和依赖不变。
 

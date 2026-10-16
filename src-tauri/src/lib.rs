@@ -27,10 +27,6 @@ async fn blocking<T: Send + 'static>(
 }
 #[derive(Default)]
 struct OpenRequests(Mutex<Vec<PathBuf>>);
-const ASSOCIATED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "markdown", "json", "jsonc", "geojson", "csv", "log", "yaml", "yml", "toml",
-    "xml", "html", "css", "js", "ts", "rs", "sql",
-];
 
 fn queue_open_paths(
     requests: &OpenRequests,
@@ -50,15 +46,8 @@ fn queue_open_paths(
         } else {
             cwd.join(arg)
         };
-        let supported = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                ASSOCIATED_EXTENSIONS
-                    .iter()
-                    .any(|item| ext.eq_ignore_ascii_case(item))
-            });
-        if supported && path.is_file() && !pending.contains(&path) {
+        // 文件名不决定能否作为文本打开；实际读取仍执行大小和无损解码校验。
+        if path.is_file() && !pending.contains(&path) {
             pending.push(path);
         }
     }
@@ -148,7 +137,7 @@ mod association_tests {
     use super::*;
 
     #[test]
-    fn queues_only_existing_supported_text_files() {
+    fn queues_existing_files_regardless_of_extension() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("note.MD"), "# Note").unwrap();
         std::fs::write(dir.path().join("map.geojson"), "{}").unwrap();
@@ -171,22 +160,52 @@ mod association_tests {
             &[
                 dir.path().join("note.MD"),
                 dir.path().join("map.geojson"),
-                dir.path().join("query.sql")
+                dir.path().join("query.sql"),
+                dir.path().join("image.png")
             ]
         );
     }
 
     #[test]
-    fn installer_associations_match_openable_extensions() {
+    fn opens_arbitrary_text_names_and_rejects_binary_content_at_read_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = [
+            "main.py",
+            "app.yml",
+            "app.yaml",
+            "Dockerfile",
+            "Main.java",
+            ".env",
+            "Makefile",
+            "unknown.custom-text",
+        ];
+        for name in names {
+            std::fs::write(dir.path().join(name), "文本内容\n").unwrap();
+        }
+        std::fs::write(dir.path().join("binary.py"), [0, 1, 2]).unwrap();
+        let requests = OpenRequests::default();
+        let mut paths: Vec<PathBuf> = names.iter().map(PathBuf::from).collect();
+        paths.push(PathBuf::from("binary.py"));
+        paths.push(PathBuf::from("Dockerfile"));
+        paths.push(PathBuf::from("missing.py"));
+        paths.push(dir.path().to_path_buf());
+        assert!(queue_open_paths(&requests, paths, dir.path()));
+        let queued = requests.0.lock().unwrap();
+        assert_eq!(queued.len(), names.len() + 1);
+        for path in &queued[..names.len()] {
+            assert_eq!(document::read(path).unwrap().text, "文本内容\n");
+        }
+        assert!(document::read(queued.last().unwrap()).is_err());
+    }
+
+    #[test]
+    fn windows_installer_does_not_declare_default_file_associations() {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let extensions = config["bundle"]["fileAssociations"][0]["ext"]
-            .as_array()
-            .unwrap();
-        let configured: Vec<&str> = extensions
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect();
-        assert_eq!(configured, ASSOCIATED_EXTENSIONS);
+        assert!(config["bundle"].get("fileAssociations").is_none());
+        assert_eq!(
+            config["bundle"]["windows"]["nsis"]["installerHooks"],
+            "windows/open-with.nsh"
+        );
     }
 }

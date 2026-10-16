@@ -9,7 +9,6 @@ use tauri::State;
 #[tauri::command]
 pub(crate) async fn native_open(access: State<'_, Access>) -> Result<Option<Document>, String> {
     let Some(file) = rfd::AsyncFileDialog::new()
-        .add_filter("文本 / Markdown", crate::ASSOCIATED_EXTENSIONS)
         .add_filter("所有文件", &["*"])
         .pick_file()
         .await
@@ -46,7 +45,7 @@ pub(crate) async fn native_save(
         let extension = std::path::Path::new(&name)
             .extension()
             .and_then(|value| value.to_str())
-            .unwrap_or("txt");
+            .unwrap_or("");
         let mut dialog = rfd::AsyncFileDialog::new();
         dialog = match extension.to_ascii_lowercase().as_str() {
             "md" | "markdown" => dialog.add_filter("Markdown", &["md", "markdown"]),
@@ -64,7 +63,7 @@ pub(crate) async fn native_save(
             {
                 dialog.add_filter("当前格式", &[other])
             }
-            _ => dialog.add_filter("文本", &["txt"]),
+            _ => dialog.add_filter("所有文件", &["*"]),
         };
         if let Some(p) = &old {
             if let Some(n) = p.file_name() {

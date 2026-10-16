@@ -34,13 +34,6 @@
       "icons/icon.ico"
     ],
     "shortDescription": "个人文本与 Markdown 编辑器",
-    "fileAssociations": [
-      {
-        "ext": ["txt", "md", "markdown", "json", "jsonc", "geojson", "csv", "log", "yaml", "yml", "toml", "xml", "html", "css", "js", "ts", "rs", "sql"],
-        "name": "zNote 文本文件",
-        "description": "zNote 文本文件"
-      }
-    ],
     "windows": {
       "nsis": {
         "installMode": "currentUser",
@@ -48,7 +41,8 @@
           "SimpChinese",
           "English"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "windows/open-with.nsh"
       }
     },
     "resources": [
@@ -59,7 +53,9 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGMEMxRDM1RDFFODJCQzIKUldUQ0sralJOUjBNbjkrN2RlNUR1T2kvaEhjakFMYWNrWTdSTkpwZTNmMmFRb24wTzA0Q1JXQWQK",
-      "endpoints": ["https://github.com/lzmzzw/zNote/releases/latest/download/latest.json"]
+      "endpoints": [
+        "https://github.com/lzmzzw/zNote/releases/latest/download/latest.json"
+      ]
     }
   }
 }
