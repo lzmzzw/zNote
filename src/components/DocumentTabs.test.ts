@@ -33,6 +33,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 const tabs = () => Array.from(root.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+it('scrolls overflowing tabs with vertical wheel and preserves native gestures', () => {
+  const list = root.querySelector<HTMLElement>('.tab-list')!;
+  Object.defineProperties(list, { scrollWidth: { value: 1200 }, clientWidth: { value: 400, configurable: true } });
+  const wheel = (options: WheelEventInit) => {
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...options });
+    tabs()[0]!.dispatchEvent(event);
+    return event;
+  };
+  expect(wheel({ deltaY: 80 }).defaultPrevented).toBe(true);
+  expect(list.scrollLeft).toBe(80);
+  wheel({ deltaY: -2, deltaMode: 1 });
+  expect(list.scrollLeft).toBe(48);
+  wheel({ deltaY: 1, deltaMode: 2 });
+  expect(list.scrollLeft).toBe(448);
+  expect(wheel({ deltaX: 50, deltaY: 10 }).defaultPrevented).toBe(false);
+  expect(wheel({ deltaY: 100, ctrlKey: true }).defaultPrevented).toBe(false);
+  expect(list.scrollLeft).toBe(448);
+  Object.defineProperty(list, 'clientWidth', { value: 1200 });
+  expect(wheel({ deltaY: 80 }).defaultPrevented).toBe(false);
+  expect(list.scrollLeft).toBe(448);
+  expect(selected).not.toHaveBeenCalled();
+});
 async function key(index: number, value: string) {
   tabs()[index]!.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }));
   await nextTick();

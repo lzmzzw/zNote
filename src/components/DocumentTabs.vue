@@ -62,6 +62,15 @@ function navigateTabs(event: KeyboardEvent, note: Note) {
   tabButtons()[target]?.focus({ preventScroll: true });
   tabButtons()[target]?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 }
+function scrollTabs(event: WheelEvent) {
+  const list = tabList.value;
+  if (!list || event.ctrlKey || list.scrollWidth <= list.clientWidth) return;
+  // 横向手势交给浏览器，普通鼠标滚轮转换为横向位移。
+  if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? list.clientWidth : 1;
+  event.preventDefault();
+  list.scrollLeft += event.deltaY * unit;
+}
 function auxClick(event: MouseEvent, note: Note) {
   if (event.button === 1) {
     event.preventDefault();
@@ -72,7 +81,7 @@ function auxClick(event: MouseEvent, note: Note) {
 
 <template>
   <div class="tabs">
-    <div ref="tabList" class="tab-list" role="tablist" aria-label="打开的文档">
+    <div ref="tabList" class="tab-list" role="tablist" aria-label="打开的文档" @wheel="scrollTabs">
       <div
         v-for="note in notes"
         :key="note.id"
