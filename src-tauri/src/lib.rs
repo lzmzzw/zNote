@@ -3,7 +3,7 @@ mod document;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
 mod recovery;
-use commands::{native_export, native_open, native_save};
+use commands::{native_export, native_make_writable, native_open, native_read_only, native_save};
 use document::Document;
 use recovery::{recovery_load, recovery_save};
 use std::{
@@ -63,25 +63,31 @@ struct OpenedDocuments {
 #[tauri::command]
 async fn native_take_open_requests(
     requests: State<'_, OpenRequests>,
+    access: State<'_, Access>,
 ) -> Result<OpenedDocuments, String> {
     let paths = std::mem::take(&mut *requests.0.lock().map_err(|_| "待打开文件状态不可用")?);
-    blocking(move || {
-        let mut result = OpenedDocuments {
-            documents: Vec::new(),
-            errors: Vec::new(),
-        };
-        for path in paths {
-            match document::read(&path) {
-                Ok(doc) => result.documents.push(doc),
-                Err(error) => result.errors.push(format!(
-                    "{}: {error}",
-                    path.file_name().unwrap_or_default().to_string_lossy()
-                )),
+    let access = Access(access.0.clone());
+    blocking(move || read_open_requests(paths, &access)).await
+}
+
+fn read_open_requests(paths: Vec<PathBuf>, access: &Access) -> Result<OpenedDocuments, String> {
+    let mut result = OpenedDocuments {
+        documents: Vec::new(),
+        errors: Vec::new(),
+    };
+    for path in paths {
+        match document::read(&path) {
+            Ok(doc) => {
+                access.0.lock().map_err(|_| "路径状态不可用")?.insert(path);
+                result.documents.push(doc);
             }
+            Err(error) => result.errors.push(format!(
+                "{}: {error}",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            )),
         }
-        Ok(result)
-    })
-    .await
+    }
+    Ok(result)
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -120,6 +126,8 @@ pub fn run() {
             native_open,
             native_take_open_requests,
             native_save,
+            native_read_only,
+            native_make_writable,
             native_export,
             recovery_load,
             recovery_save
@@ -135,6 +143,22 @@ pub fn run() {
 #[cfg(test)]
 mod association_tests {
     use super::*;
+
+    #[test]
+    fn associated_open_authorizes_only_successfully_read_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        let binary = dir.path().join("binary.txt");
+        std::fs::write(&path, "original").unwrap();
+        std::fs::write(&binary, [0, 1, 2]).unwrap();
+        let access = Access::default();
+        let result = read_open_requests(vec![path.clone(), binary.clone()], &access).unwrap();
+        assert_eq!(result.documents.len(), 1);
+        assert_eq!(result.errors.len(), 1);
+        let approved = access.0.lock().unwrap();
+        assert!(approved.contains(&path));
+        assert!(!approved.contains(&binary));
+    }
 
     #[test]
     fn queues_existing_files_regardless_of_extension() {

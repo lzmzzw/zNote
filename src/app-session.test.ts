@@ -14,6 +14,9 @@ const bridge = vi.hoisted(() => ({
   open: null as unknown,
   requests: [] as unknown[],
   saveArgs: null as unknown,
+  readOnly: {} as Record<string, boolean>,
+  writableArgs: null as unknown,
+  writableFail: false,
   maximized: false,
   resized: undefined as undefined | (() => void),
   menu: undefined as undefined | ((event: { payload: string }) => void),
@@ -29,6 +32,13 @@ vi.mock('@tauri-apps/api/core', () => ({
     }
     if (command === 'native_take_open_requests') return { documents: bridge.requests.splice(0), errors: [] };
     if (command === 'native_open') return bridge.open;
+    if (command === 'native_read_only') return bridge.readOnly[(args as unknown as { path: string }).path] ?? false;
+    if (command === 'native_make_writable') {
+      bridge.writableArgs = args;
+      if (bridge.writableFail) throw new Error('access denied');
+      bridge.readOnly[(args as unknown as { path: string }).path] = false;
+      return false;
+    }
     if (command === 'native_save') {
       bridge.saveArgs = args;
       return null;
@@ -101,6 +111,9 @@ beforeEach(() => {
   bridge.open = null;
   bridge.requests = [];
   bridge.saveArgs = null;
+  bridge.readOnly = {};
+  bridge.writableArgs = null;
+  bridge.writableFail = false;
   bridge.maximized = false;
   bridge.resized = undefined;
   bridge.menu = undefined;
@@ -518,13 +531,54 @@ async function choose(label: string) {
   await new Promise((resolve) => setTimeout(resolve, 10));
   await nextTick();
 }
-async function openDoc(name: string, text: string) {
-  bridge.open = { path: `C:/${name}`, text, encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: 'revision' };
+async function openDoc(name: string, text: string, readOnly = false) {
+  bridge.open = { path: `C:/${name}`, text, encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: 'revision', readOnly };
+  bridge.readOnly[`C:/${name}`] = readOnly;
   key('o');
   await new Promise((resolve) => setTimeout(resolve, 30));
   await nextTick();
 }
 describe('regional context menus', () => {
+  it('marks read-only files and makes the targeted inactive file writable without losing edits', async () => {
+    await mount();
+    await openDoc('readonly.txt', 'original', true);
+    editor().dispatch({ changes: { from: 0, insert: 'edited ' } });
+    await openDoc('writable.txt', 'other');
+    const readonlyTab = root.querySelectorAll('.tab')[1]!;
+    expect(readonlyTab.textContent).toContain('只读');
+    expect(root.querySelector('.tab.active .read-only-label')).toBeNull();
+    await rightClick(root.querySelector('.tab.active')!);
+    expect(labels()).not.toContain('转为可写文件');
+    await rightClick(readonlyTab);
+    expect(labels()).toContain('转为可写文件');
+    await choose('转为可写文件');
+    expect(bridge.writableArgs).toEqual({ path: 'C:/readonly.txt' });
+    expect(readonlyTab.querySelector('.read-only-label')).toBeNull();
+    expect(root.querySelector('.tab.active')?.textContent).toContain('writable.txt');
+    await rightClick(readonlyTab);
+    expect(labels()).not.toContain('转为可写文件');
+    readonlyTab.querySelector<HTMLButtonElement>('[role="tab"]')!.click();
+    await nextTick();
+    expect(editor().state.doc.toString()).toBe('edited original');
+    expect(root.querySelector('.tab.active [role="tab"]')?.getAttribute('aria-label')).toContain('未保存');
+  });
+  it('retains the read-only mark on failure and reads disk attributes again after restoring a session', async () => {
+    await mount();
+    await openDoc('readonly.txt', 'original', true);
+    bridge.writableFail = true;
+    await rightClick(root.querySelector('.tab.active')!);
+    await choose('转为可写文件');
+    expect(root.querySelector('.tab.active .read-only-label')).not.toBeNull();
+    expect(root.textContent).toContain('转为可写失败');
+    await close();
+    unmount();
+    await mount();
+    expect(root.querySelector('.tab.active .read-only-label')).not.toBeNull();
+    bridge.readOnly['C:/readonly.txt'] = false;
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(root.querySelector('.tab.active .read-only-label')).toBeNull();
+  });
   it('targets an inactive tab and exposes the exact tab and blank-area commands', async () => {
     await mount();
     key('n');
@@ -851,6 +905,17 @@ describe('editor typography', () => {
   });
 });
 describe('session lifecycle', () => {
+  it('saves dialog-opened files to their original path and leaves new files without a path', async () => {
+    await mount();
+    key('s');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(bridge.saveArgs).toMatchObject({ path: null, saveAs: false });
+    await openDoc('original.txt', 'original');
+    editor().dispatch({ changes: { from: 0, insert: 'edited ' } });
+    key('s');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(bridge.saveArgs).toMatchObject({ path: 'C:/original.txt', text: 'edited original', saveAs: false });
+  });
   it('selects the nearest left tab after closing the active tab, or the right tab when first', async () => {
     await mount();
     await openDoc('a.txt', 'a');
@@ -891,7 +956,7 @@ describe('session lifecycle', () => {
     expect(root.querySelector('.csv-preview table')).not.toBeNull();
     key('s');
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(bridge.saveArgs).toMatchObject({ saveAs: true });
+    expect(bridge.saveArgs).toMatchObject({ path: 'C:/sample.csv', saveAs: false });
     key('w');
     await nextTick();
     expect(root.querySelector('[role="dialog"]')).toBeNull();
@@ -901,6 +966,12 @@ describe('session lifecycle', () => {
     editor().dispatch({ changes: { from: 0, insert: 'edited ' } });
     await nextTick();
     expect(root.querySelector('[role="tab"][aria-label="sample.txt，未保存"]')).not.toBeNull();
+    key('s');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(bridge.saveArgs).toMatchObject({ path: 'C:/sample.txt', text: 'edited content', saveAs: false });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(bridge.saveArgs).toMatchObject({ path: 'C:/sample.txt', saveAs: true });
   });
   it('resizes CSV columns without changing save status and restores the widths', async () => {
     await mount();

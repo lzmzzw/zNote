@@ -290,6 +290,28 @@ footer .outline-toggle:hover {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: none;
+}
+.app .tab-list::-webkit-scrollbar {
+  display: none;
+}
+.tab-content {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  min-width: 100%;
+}
+.tab-scroll {
+  flex: 0 0 28px;
+  height: 100%;
+  padding: 0;
+  color: var(--muted);
+  border-radius: 0;
+}
+.tab-scroll:hover,
+.tab-scroll:focus-visible {
+  color: var(--accent);
+  background: var(--hover);
 }
 .tabs .mode-switch {
   margin: 0 8px;
@@ -309,6 +331,11 @@ footer .outline-toggle:hover {
 }
 .tab .file-icon {
   flex: none;
+}
+.tab .read-only-label {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
 }
 .tab .file-icon.unsaved {
   color: var(--unsaved);

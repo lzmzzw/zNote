@@ -17,6 +17,7 @@ pub struct Document {
     pub bom: bool,
     pub line_ending: String,
     pub revision: String,
+    pub read_only: bool,
 }
 pub fn revision(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -196,7 +197,8 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 pub fn read(path: &Path) -> Result<Document, String> {
-    if fs::metadata(path).map_err(|e| e.to_string())?.len() > MAX_BYTES {
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    if metadata.len() > MAX_BYTES {
         return Err("文件超过 20 MB 限制".into());
     }
     let bytes = read_bytes(path)?;
@@ -208,6 +210,7 @@ pub fn read(path: &Path) -> Result<Document, String> {
         encoding,
         bom,
         revision: revision(&bytes),
+        read_only: metadata.permissions().readonly(),
     })
 }
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {

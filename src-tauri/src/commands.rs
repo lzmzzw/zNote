@@ -6,6 +6,80 @@ use crate::{
 use std::path::PathBuf;
 use tauri::State;
 
+fn authorized_file_metadata(
+    access: &Access,
+    path: &std::path::Path,
+) -> Result<std::fs::Metadata, String> {
+    if !access
+        .0
+        .lock()
+        .map_err(|_| "路径状态不可用")?
+        .contains(path)
+    {
+        return Err("仅允许操作已通过原生入口打开的文件".into());
+    }
+    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    if !metadata.is_file() {
+        return Err("目标不是文件".into());
+    }
+    Ok(metadata)
+}
+
+#[tauri::command]
+pub(crate) async fn native_read_only(
+    access: State<'_, Access>,
+    path: String,
+) -> Result<bool, String> {
+    let access = Access(access.0.clone());
+    blocking(move || {
+        Ok(
+            authorized_file_metadata(&access, std::path::Path::new(&path))?
+                .permissions()
+                .readonly(),
+        )
+    })
+    .await
+}
+
+// Windows 仅清除只读属性；Unix 分支显式限制为所有者写权限。
+#[cfg_attr(windows, allow(clippy::permissions_set_readonly_false))]
+fn make_writable(access: &Access, path: &std::path::Path) -> Result<bool, String> {
+    let mut permissions = authorized_file_metadata(access, path)?.permissions();
+    if permissions.readonly() {
+        #[cfg(windows)]
+        permissions.set_readonly(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // 只恢复所有者写权限，不扩大组或其他用户的权限。
+            permissions.set_mode(permissions.mode() | 0o200);
+        }
+        std::fs::set_permissions(path, permissions).map_err(|e| e.to_string())?;
+    }
+    let read_only = authorized_file_metadata(access, path)?
+        .permissions()
+        .readonly();
+    if read_only {
+        return Err("文件仍为只读，无法转为可写".into());
+    }
+    Ok(read_only)
+}
+
+#[tauri::command]
+pub(crate) async fn native_make_writable(
+    access: State<'_, Access>,
+    writes: State<'_, Writes>,
+    path: String,
+) -> Result<bool, String> {
+    let access = Access(access.0.clone());
+    let writes = writes.0.clone();
+    blocking(move || {
+        let _write = writes.lock().map_err(|_| "文件写入状态不可用")?;
+        make_writable(&access, std::path::Path::new(&path))
+    })
+    .await
+}
+
 #[tauri::command]
 pub(crate) async fn native_open(access: State<'_, Access>) -> Result<Option<Document>, String> {
     let Some(file) = rfd::AsyncFileDialog::new()
@@ -87,7 +161,7 @@ pub(crate) async fn native_save(
             .map_err(|_| "路径状态不可用")?
             .contains(&dest)
     {
-        return Err("请通过打开或另存为对话框选择文件".into());
+        return Err("请通过打开对话框、系统文件关联或另存为选择文件".into());
     }
     let access = access.0.clone();
     let writes = writes.0.clone();
@@ -110,6 +184,10 @@ pub(crate) async fn native_save(
             bom,
             line_ending,
             revision: document::revision(&bytes),
+            read_only: std::fs::metadata(&dest)
+                .map_err(|e| e.to_string())?
+                .permissions()
+                .readonly(),
         }))
     })
     .await
@@ -180,6 +258,36 @@ fn save_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn makes_only_authorized_files_writable_and_preserves_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("readonly.txt");
+        std::fs::write(&path, b"original").unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        assert!(document::read(&path).unwrap().read_only);
+        let access = Access::default();
+        assert!(make_writable(&access, &path).is_err());
+        assert!(std::fs::metadata(&path).unwrap().permissions().readonly());
+        access.0.lock().unwrap().insert(path.clone());
+        let before = document::read(&path).unwrap();
+        assert!(!make_writable(&access, &path).unwrap());
+        let after = document::read(&path).unwrap();
+        assert!(!after.read_only);
+        assert_eq!(before.text, after.text);
+        assert_eq!(before.revision, after.revision);
+        save_bytes(
+            &std::sync::Mutex::new(()),
+            &path,
+            b"edited",
+            Some(Some(&before.revision)),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"edited");
+        access.0.lock().unwrap().insert(dir.path().to_path_buf());
+        assert!(make_writable(&access, dir.path()).is_err());
+    }
     #[test]
     fn concurrent_saves_of_same_revision_have_one_winner() {
         let dir = tempfile::tempdir().unwrap();

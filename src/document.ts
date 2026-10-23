@@ -8,6 +8,7 @@ export interface NativeDocument {
   bom: boolean;
   lineEnding: string;
   revision: string | null;
+  readOnly: boolean;
 }
 export type NoteFormat = 'txt' | 'markdown' | 'json' | 'csv';
 export type DisplayMode = 'source' | 'live' | 'split';

@@ -467,6 +467,7 @@ function onContextMenu(event: MouseEvent) {
           await saveNote(note, true);
         },
       },
+      ...(path && note.readOnly ? [{ label: '转为可写文件', action: () => makeWritable(note) }] : []),
       { label: '复制文件名', separator: true, action: () => copyText(name) },
       { label: '复制完整路径', disabled: !path, action: () => copyText(path ?? '') },
       ...closeItems.map((item, index) => ({ ...item, separator: index === 0 })),
@@ -732,6 +733,7 @@ function createNote(doc?: NativeDocument, name = nextUntitledName(notes.value.ma
     bom: false,
     lineEnding: 'LF',
     revision: null,
+    readOnly: false,
     ...metadata,
     id: nextId++,
     name: noteName,
@@ -896,6 +898,7 @@ async function openFile() {
       const existing = notes.value.find((n) => n.path?.toLowerCase() === doc.path?.toLowerCase());
       if (existing) {
         existing.requiresSaveAs = false;
+        existing.readOnly = doc.readOnly;
         selectNote(existing);
       } else createNote(doc);
       status.value = '文件已打开';
@@ -921,14 +924,16 @@ async function openAssociatedFiles() {
         const path = doc.path;
         if (!path) continue;
         const existing = notes.value.find((note) => note.path?.toLowerCase() === path.toLowerCase());
-        if (existing) selectNote(existing);
-        else {
-          const note = createNote(doc);
-          note.requiresSaveAs = true;
+        if (existing) {
+          existing.requiresSaveAs = false;
+          existing.readOnly = doc.readOnly;
+          selectNote(existing);
+        } else {
+          createNote(doc);
         }
       }
       if (result.errors.length) status.value = `打开文件失败：${result.errors.join('；')}`;
-      else if (result.documents.length) status.value = '文件已打开；首次保存需确认位置';
+      else if (result.documents.length) status.value = '文件已打开';
     } while (pendingAssociated);
   } catch (error) {
     status.value = `关联文件打开失败：${error}`;
@@ -968,6 +973,7 @@ async function saveNote(note = active.value, saveAs = false): Promise<boolean> {
       bom: changedDuringSave ? note.bom : doc.bom,
       lineEnding: changedDuringSave ? note.lineEnding : doc.lineEnding,
       revision: doc.revision,
+      readOnly: doc.readOnly,
       saved: text,
       name: doc.path?.split(/[\\/]/).pop() ?? note.name,
       metaDirty: changedDuringSave && note.metaDirty,
@@ -986,6 +992,38 @@ async function saveNote(note = active.value, saveAs = false): Promise<boolean> {
   } catch (e) {
     status.value = `保存失败：${e}`;
     return false;
+  } finally {
+    busy.value = false;
+  }
+}
+let readOnlyRefreshVersion = 0;
+async function refreshReadOnly() {
+  if (!native || closingWindow.value || busy.value) return;
+  const refreshVersion = ++readOnlyRefreshVersion;
+  await Promise.allSettled(notes.value.map(async (note) => {
+    const path = note.path;
+    if (!path) return;
+    const readOnly = await invoke<boolean>('native_read_only', { path });
+    if (refreshVersion === readOnlyRefreshVersion && notes.value.includes(note) && note.path === path) {
+      note.readOnly = readOnly;
+      touch();
+    }
+  }));
+}
+async function makeWritable(note: Note) {
+  const path = note.path;
+  if (!native || !path || !note.readOnly || busy.value) return;
+  readOnlyRefreshVersion++;
+  busy.value = true;
+  try {
+    const readOnly = await invoke<boolean>('native_make_writable', { path });
+    if (notes.value.includes(note) && note.path === path) {
+      note.readOnly = readOnly;
+      touch();
+    }
+    status.value = readOnly ? '文件仍为只读' : '文件已转为可写';
+  } catch (error) {
+    status.value = `转为可写失败：${error}`;
   } finally {
     busy.value = false;
   }
@@ -1147,6 +1185,7 @@ function changeFormat(format: Exclude<NoteFormat, 'txt'>) {
   if (wasLocalTxt) {
     note.path = null;
     note.revision = null;
+    note.readOnly = false;
     note.requiresSaveAs = false;
   }
   note.version++;
@@ -1425,6 +1464,7 @@ onMounted(async () => {
       if (session) {
         const restored = session.notes.map((doc) => ({
           ...doc,
+          readOnly: false,
           format: displayFormatFor(doc.format, doc.editor.doc.length),
           mode: displayFormatFor(doc.format, doc.editor.doc.length) !== doc.format ? ('source' as const) : doc.mode,
           id: nextId++,
@@ -1536,10 +1576,13 @@ onMounted(async () => {
       });
     }
     await openAssociatedFiles();
+    await refreshReadOnly();
+    window.addEventListener('focus', refreshReadOnly);
     scheduleRecovery();
   }
 });
 onBeforeUnmount(() => {
+  readOnlyRefreshVersion++;
   gutterObserver?.disconnect();
   view?.scrollDOM.removeEventListener('scroll', onSourceScroll);
   view?.destroy();
@@ -1553,6 +1596,7 @@ onBeforeUnmount(() => {
   clearTimeout(toastTimer);
   window.removeEventListener('keydown', shortcuts);
   window.removeEventListener('resize', resizeLayout);
+  window.removeEventListener('focus', refreshReadOnly);
 });
 </script>
 

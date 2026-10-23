@@ -13,8 +13,16 @@ const notes = [
 ] as Note[];
 let state: { activeId: number };
 const selected = vi.fn();
+let resize: () => void;
+const disconnect = vi.fn();
 beforeEach(async () => {
   selected.mockClear();
+  disconnect.mockClear();
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { resize = callback; }
+    observe() {}
+    disconnect = disconnect;
+  });
   Element.prototype.scrollIntoView = vi.fn();
   state = reactive({ activeId: 1 });
   root = document.createElement('div');
@@ -31,8 +39,45 @@ afterEach(() => {
   app.unmount();
   root.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 const tabs = () => Array.from(root.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+it('shows only available scroll directions and updates after resizing', async () => {
+  const list = root.querySelector<HTMLElement>('.tab-list')!;
+  const arrow = (direction: string) => root.querySelector<HTMLButtonElement>(`[aria-label="向${direction}滚动标签"]`);
+  expect(arrow('左')).toBeNull();
+  expect(arrow('右')).toBeNull();
+  let width = 400;
+  let left = 0;
+  Object.defineProperties(list, {
+    scrollWidth: { get: () => 1200 },
+    clientWidth: { get: () => width },
+    scrollLeft: { get: () => left, set: (value: number) => { left = Math.max(0, Math.min(1200 - width, value)); } },
+  });
+  resize();
+  await nextTick();
+  expect(arrow('左')).toBeNull();
+  expect(arrow('右')).not.toBeNull();
+  arrow('右')!.click();
+  await nextTick();
+  expect(left).toBe(320);
+  expect(arrow('左')).not.toBeNull();
+  arrow('右')!.click();
+  arrow('右')!.click();
+  await nextTick();
+  expect(left).toBe(800);
+  expect(arrow('右')).toBeNull();
+  expect(arrow('左')).not.toBeNull();
+  list.scrollLeft = 0;
+  list.dispatchEvent(new Event('scroll'));
+  await nextTick();
+  expect(arrow('左')).toBeNull();
+  width = 1200;
+  resize();
+  await nextTick();
+  expect(arrow('右')).toBeNull();
+  expect(selected).not.toHaveBeenCalled();
+});
 it('scrolls overflowing tabs with vertical wheel and preserves native gestures', () => {
   const list = root.querySelector<HTMLElement>('.tab-list')!;
   Object.defineProperties(list, { scrollWidth: { value: 1200 }, clientWidth: { value: 400, configurable: true } });

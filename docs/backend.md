@@ -6,6 +6,7 @@ zNote 的 Rust 后端仅提供本地文件、会话恢复与单实例关联打�
 
 - `src-tauri/src/lib.rs`：应用启动、共享状态、关联打开队列及命令注册。
 - `commands.rs`：原生打开/保存/导出对话框与路径授权；磁盘保存的校验和替换在进程内串行执行，避免并发旧版本互相覆盖。
+- `native_read_only` / `native_make_writable`：仅接受原生层已授权的文件路径，分别读取只读属性和清除只读限制；属性修改与保存共用写入互斥，不修改正文或 revision。Windows 仅清除只读位，Unix 仅增加所有者写权限；不调整 ACL 或提权。
 - `document.rs`：有界读取、无损编码、换行处理、流式 SHA-256 与原子替换。
 - `recovery.rs`：会话读取、原生授权路径附加与有界序列化。前端仍通过 Promise 链按顺序提交会话快照。
 - `src-tauri/windows/open-with.nsh`：Windows 可选打开方式、通用右键入口、旧版自动关联迁移与卸载清理。`text-extensions.nsh` 仅定义候选扩展名，不是读取白名单；打开队列接受任意扩展名和无扩展名的现存文件，内容由 `document.rs` 解码校验。Windows 主配置不使用会接管默认值和图标的 `bundle.fileAssociations`；macOS 的 Finder 格式声明保留在平台覆盖配置中。
