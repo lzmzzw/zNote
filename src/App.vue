@@ -1919,7 +1919,7 @@ onBeforeUnmount(() => {
             <ChevronRight v-if="outlineCollapsed" :size="17" /><ChevronLeft v-else :size="17" />
           </button>
           <span v-if="large" class="large-file-status" role="status"
-            >{{ isCsv ? '大 CSV · 后台解析' : '大文件 · TXT 显示' }}；会话上限 256 MiB。</span
+            >{{ isCsv ? '大 CSV · 后台解析' : '大文件 · TXT 显示' }}；单文件上限 100 MiB，会话上限 256 MiB。</span
           >
           <span v-if="busy" class="file-status" role="status">处理中</span>
           <div id="csv-status-slot" v-show="isCsv && mode !== 'source'"></div>

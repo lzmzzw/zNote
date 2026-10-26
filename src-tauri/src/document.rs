@@ -7,7 +7,7 @@ use std::{
     io::{Read, Write},
     path::Path,
 };
-pub const MAX_BYTES: u64 = 20 * 1024 * 1024;
+pub const MAX_BYTES: u64 = 100 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Document {
@@ -24,7 +24,7 @@ pub fn revision(bytes: &[u8]) -> String {
 }
 pub fn decode(bytes: &[u8]) -> Result<(String, String, bool), String> {
     if bytes.len() as u64 > MAX_BYTES {
-        return Err("文件超过 20 MB 限制".into());
+        return Err("文件超过 100 MiB 限制".into());
     }
     let (encoding, bom, data) = if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
         ("UTF-8", true, &bytes[3..])
@@ -117,7 +117,7 @@ pub fn encode(text: &str, encoding: &str, bom: bool, eol: &str) -> Result<Vec<u8
         _ => return Err("不支持的编码".into()),
     };
     if bytes.len() as u64 > MAX_BYTES {
-        return Err("保存内容超过 20 MB 限制".into());
+        return Err("保存内容超过 100 MiB 限制".into());
     }
     Ok(bytes)
 }
@@ -192,14 +192,14 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>, String> {
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     if bytes.len() as u64 > MAX_BYTES {
-        return Err("文件超过 20 MB 限制".into());
+        return Err("文件超过 100 MiB 限制".into());
     }
     Ok(bytes)
 }
 pub fn read(path: &Path) -> Result<Document, String> {
     let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
     if metadata.len() > MAX_BYTES {
-        return Err("文件超过 20 MB 限制".into());
+        return Err("文件超过 100 MiB 限制".into());
     }
     let bytes = read_bytes(path)?;
     let (text, encoding, bom) = decode(&bytes)?;
@@ -226,7 +226,7 @@ pub fn disk_revision(path: &Path) -> Result<Option<String>, String> {
         Ok(file) => file,
     };
     if file.metadata().map_err(|e| e.to_string())?.len() > MAX_BYTES {
-        return Err("目标文件超过 20 MB 限制".into());
+        return Err("目标文件超过 100 MiB 限制".into());
     }
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
@@ -241,7 +241,7 @@ pub fn disk_revision(path: &Path) -> Result<Option<String>, String> {
         }
         total += count as u64;
         if total > MAX_BYTES {
-            return Err("目标文件超过 20 MB 限制".into());
+            return Err("目标文件超过 100 MiB 限制".into());
         }
         hasher.update(&buffer[..count]);
     }
@@ -360,6 +360,24 @@ mod tests {
         ] {
             assert_eq!(line_ending(text), expected);
         }
+    }
+    #[test]
+    fn accepts_100_mib_and_rejects_larger_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("limit.txt");
+        let mut bytes = vec![b'x'; 100 * 1024 * 1024];
+        assert!(decode(&bytes).is_ok());
+        assert!(encode(std::str::from_utf8(&bytes).unwrap(), "UTF-8", false, "LF").is_ok());
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(read_bytes(&path).unwrap().len(), bytes.len());
+        assert!(disk_revision(&path).unwrap().is_some());
+        bytes.push(b'x');
+        assert!(decode(&bytes).is_err());
+        assert!(encode(std::str::from_utf8(&bytes).unwrap(), "UTF-8", false, "LF").is_err());
+        fs::write(&path, &bytes).unwrap();
+        assert!(read(&path).is_err());
+        assert!(read_bytes(&path).is_err());
+        assert!(disk_revision(&path).is_err());
     }
     #[test]
     fn streaming_revision_matches_memory_and_enforces_limit() {

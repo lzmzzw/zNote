@@ -1,6 +1,6 @@
 # zNote
 
-个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.8**，支持 Windows x64 与 macOS arm64。
+个人文本编辑器与 Markdown 写作工具。Tauri 2 + Rust 提供本地文件能力，Vue 3 + CodeMirror 6 提供单编辑内核与写作界面。当前版本 **0.1.9**，支持 Windows x64 与 macOS arm64。
 
 界面使用 Segoe UI 搭配内置 Noto Sans SC。所有格式的文档编辑区与预览区统一使用本机字体：英文优先 Cascadia Code，未安装时使用 Consolas；中文优先思源黑体（Source Han Sans SC / CN），未安装时使用微软雅黑。正文、代码块和行内代码默认均为 14 px，可在“帮助 → 设置 → 字体大小”中调整为 10–32 px 的整数，对所有标签即时生效并在重启后保留；Markdown 标题按正文字号成比例调整。TXT、LOG 和 Markdown 正文行高为 1.7，JSON/CSV 等结构化文本行高为 1.6。JSON 两侧操作位于独立工具区，不覆盖正文。此设置不改变菜单等界面字号，也不改变导出文件的字体与排版。
 
@@ -12,7 +12,7 @@ macOS 界面优先使用系统字体，文档英文优先 Menlo / Monaco，中�
 
 - 多标签、独立撤销历史、行号、自动换行、搜索替换。标签按文本、Markdown、JSON（含 GeoJSON）和 CSV 显示对应图标；未保存文档的图标为红色。鼠标中键可关闭标签，未保存时先提示。标签栏不显示横向滚动条；左侧或右侧有隐藏标签时，对应显示向左或向右箭头，点击可滚动浏览。将鼠标放在标签栏上仍可用滚轮左右滚动。顶部菜单提供文件、编辑、格式和帮助操作；帮助中的设置可调整主题及当前文档的保存编码、换行格式。
 - 无可恢复文档时打开空白 `.txt`，不生成欢迎文档。临时标签依次命名为 `未命名1.txt`、`未命名2.txt` 等，避开已有编号；重启保留名称，旧版同名临时标签会补编号。打开本地文档按 `.md` / `.markdown`、`.json` / `.jsonc` / `.geojson`、`.csv` 后缀识别格式。Markdown、CSV 默认原位显示，JSON（含 JSONC、GeoJSON）默认分屏，其他类型默认源码显示。格式菜单中的“显示为 Markdown / CSV / JSON”仅调整当前标签的解析和预览，不改文件名与保存路径；编辑后仍保存到原文件。新建文档、TXT 和其他普通文本文件可用，已保存的 Markdown、JSON/GeoJSON、CSV 文件置灰。“转为 Markdown / CSV / JSON”仅对新建文档和本地 `.txt` 文件可用；已保存的 Markdown、JSON/GeoJSON、CSV 文件置灰，其他后缀不显示。转换本地 `.txt` 时保留原文件，后续保存以新后缀另存为。转为 JSON 后对非空内容执行可撤销的格式化。手动选择的显示模式在当前标签内保留，切换标签不会沿用其他文档的模式。
-- 所有本地文件均可尝试以文本打开，不按扩展名限制；支持 `.py`、`.java`、`.yml`、`.yaml`、其他代码/配置文件及 `Dockerfile`、`Makefile`、`.env` 等无扩展名文件。原生打开对话框默认显示所有文件；Markdown、JSON/JSONC/GeoJSON 和 CSV 保留对应显示，其余按普通文本显示，保留原文件名。仍执行 20 MiB 上限及 UTF-8、GBK、带 BOM 的 UTF-16 解码检查；包含 NUL 或无法无损解码的内容拒绝打开。
+- 所有本地文件均可尝试以文本打开，不按扩展名限制；支持 `.py`、`.java`、`.yml`、`.yaml`、其他代码/配置文件及 `Dockerfile`、`Makefile`、`.env` 等无扩展名文件。原生打开对话框默认显示所有文件；Markdown、JSON/JSONC/GeoJSON 和 CSV 保留对应显示，其余按普通文本显示，保留原文件名。仍执行 100 MiB 上限及 UTF-8、GBK、带 BOM 的 UTF-16 解码检查；包含 NUL 或无法无损解码的内容拒绝打开。
 - Windows 安装版只为常见文本扩展名注册“打开方式 → zNote”候选，并为任意文件提供“使用 zNote 打开”右键入口（Windows 11 可能位于“显示更多选项”）。不设置默认应用、不写文件类型图标、不改 Windows UserChoice；文件保留原默认程序和图标。安装时仅恢复仍指向旧版自动关联的扩展名默认值；若旧备份已被重复安装覆盖，则移除该用户层默认值，回退系统关联。用户在 Windows 中主动选择的默认应用不由安装程序更改。打开的文件会交给现有 zNote 窗口，或启动新窗口；未编辑时显示已保存，首次主动保存仍需通过原生保存对话框确认路径，无扩展名文件不自动追加 `.txt`。
 - 关闭当前标签后默认选中紧邻左侧的标签；最左侧标签关闭时选中右侧标签。通过文件关联打开文档时，已最小化的 zNote 窗口会恢复并置于前台。
 - Markdown 源码、原位、分屏预览；新标签的原位宽度默认标准（最大 960px），格式菜单的“Markdown 设置”可为当前标签选择全宽、标准或紧凑（最大 720px），后两档居中显示并随窗口缩窄。已有标签保留会话中保存的宽度选择；这项显示设置不改动文档内容。原位与分屏共用 CommonMark/GFM 解析，排版标题、强调、列表与任务框、链接、引用、表格、代码块、分隔线、脚注及行内/块级公式。原位点击排版块会显示该块的 Markdown 原文供编辑，离开后重新排版。`mermaid` 与 Mermaid 风格的 `flowchart` 围栏显示 Mermaid 图；`flow` 与 flowchart.js 风格的 `flowchart` 围栏显示 flowchart.js 图。分屏预览按语言高亮普通代码块。编辑器自动补全括号与引号。
@@ -75,7 +75,7 @@ CSV 设置和查找替换的复选框使用统一主题外观，保留原生勾�
 - 原位模式按块切换排版与源码，不提供单元格级可视化表格编辑。图片显示占位文字，不读取本地图片路径或请求远程资源；原始 HTML 仍按文本处理。图表源码超过 2 万字符或语法错误时保留源码显示。暂不提供目录树、插件或云同步。
 - 导出仅支持 100 万 UTF-16 字符以内的 `.md` / `.markdown` 文档。保留常用标题、段落、强调、列表、引用、代码块和表格；图片以占位文字输出，不嵌入图片。PDF 内置 Noto Sans SC 字体以支持中文。
 - Markdown、JSON 使用各自的语法扩展；普通文本和 CSV 使用文本编辑，不提供 IDE 级语言服务。
-- 单文件读取和保存上限为 20 MiB；仅 CSV 支持大文件结构化预览。Markdown、JSON（含 JSONC、GeoJSON）超过 100 万 UTF-16 字符时，打开和会话恢复均退化为 TXT 源码显示，不提供语法高亮、大纲或预览；不改变原文件名、内容、编码、BOM 与换行。编辑跨过此阈值时也退化为 TXT。大文件提醒位于底栏左侧。大文件默认不折行，可在“格式 → 自动折行”切换，仍可编辑、查找和保存。
+- 单文件读取和保存上限为 100 MiB；仅 CSV 支持大文件结构化预览。Markdown、JSON（含 JSONC、GeoJSON）超过 100 万 UTF-16 字符时，打开和会话恢复均退化为 TXT 源码显示，不提供语法高亮、大纲或预览；不改变原文件名、内容、编码、BOM 与换行。编辑跨过此阈值时也退化为 TXT。大文件提醒位于底栏左侧。大文件默认不折行，可在“格式 → 自动折行”切换，仍可编辑、查找和保存。
 - CSV 在后台解析，表格按可见行列加载，大文件也可预览、跳行及定位源码。解析可取消或重新开始；编辑或修改 CSV 设置后自动重新解析。单元格单行省略显示，最多显示 4,096 字符，复制保留完整字段；超过 100,000 列时使用固定列宽。后台索引仍占用内存，此实现不扩大单文件上限。
 - CSV 表格预览的行列统计、跳行与解析控制位于底栏右侧，源码模式仍显示光标行列位置。
 - 普通及大 CSV 预览左侧显示固定行号，横向滚动时保留；行号按解析记录计数，首行表头为第 1 行，多行字段仍计为一条记录。点击行号定位原文。
@@ -101,7 +101,7 @@ pwsh -NoProfile -File scripts/collect-licenses.ps1
 pwsh -NoProfile -File scripts/build.ps1
 ```
 
-`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.8_x64-setup.exe`。NSIS 安装范围为当前用户。macOS arm64 由 GitHub Actions 在 `aarch64-apple-darwin` runner 上生成 `.dmg` 和签名 updater 归档；依赖升级后重新收集许可再打包。
+`scripts/build.ps1` 自动载入本机 MSVC 环境，输出 `src-tauri/target/release/bundle/nsis/zNote_0.1.9_x64-setup.exe`。NSIS 安装范围为当前用户。macOS arm64 由 GitHub Actions 在 `aarch64-apple-darwin` runner 上生成 `.dmg` 和签名 updater 归档；依赖升级后重新收集许可再打包。
 
 macOS 本地构建需要 Xcode Command Line Tools、Rust stable 与 `aarch64-apple-darwin` target，以及相同的 Node.js / pnpm；运行 `pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg`，Tauri 会自动合并 `src-tauri/tauri.macos.conf.json`。必须包含 `app` 目标才能生成 updater 所需的 `.app.tar.gz` 和签名；仅构建 `dmg` 不会生成更新归档。发布配置与元数据检查使用 `node --test scripts/release-updater.check.cjs`。
 
