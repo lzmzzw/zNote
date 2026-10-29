@@ -1,4 +1,4 @@
-import { EditorSelection, Prec, type Extension } from '@codemirror/state';
+import { ChangeSet, EditorSelection, EditorState, Prec, type Extension } from '@codemirror/state';
 import { EditorView, keymap, type Command } from '@codemirror/view';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -29,9 +29,34 @@ export function languageFor(format: NoteFormat, size: number): Extension {
   return [
     support,
     support.language.data.of({ closeBrackets: { brackets: ['(', '[', '{', "'", '"', '`', '```'] } }),
+    completeMarkdownTriple,
     Prec.highest(keymap.of([{ key: 'Enter', run: splitMarkdownFence }])),
   ];
 }
+
+// CodeMirror only promotes a double quote to a triple at a syntax-node start.
+// Normalize the short-pair result after Markdown text too, within the same
+// transaction so its native closing-bracket effects, selection and undo map together.
+const completeMarkdownTriple = EditorState.transactionFilter.of((transaction) => {
+  if (!transaction.isUserEvent('input.type') || transaction.startState.readOnly) return transaction;
+  const pairs = new Set<number>();
+  transaction.changes.iterChanges((from, to, _fromB, _toB, inserted) => {
+    if (from === to && inserted.toString() === '``') pairs.add(from);
+  });
+  const additions: { from: number; insert: string }[] = [];
+  transaction.startState.selection.ranges.forEach((range, index) => {
+    if (!range.empty || !pairs.has(range.head) || range.head < 2) return;
+    const config = transaction.startState.languageDataAt<{ brackets?: string[] }>('closeBrackets', range.head)[0];
+    if (!config?.brackets?.includes('```')) return;
+    const before = transaction.startState.sliceDoc(Math.max(0, range.head - 3), range.head);
+    if (!before.endsWith('``') || before.endsWith('```')) return;
+    const head = transaction.changes.mapPos(range.head, -1) + 1;
+    if (transaction.newSelection.ranges[index]?.head === head) additions.push({ from: head, insert: '``' });
+  });
+  if (!additions.length) return transaction;
+  const changes = ChangeSet.of(additions, transaction.newDoc.length);
+  return [transaction, { changes, selection: transaction.newSelection.map(changes, -1), sequential: true }];
+});
 
 // Expand a paired fence on Enter, keeping an optional language label on its opening line.
 export const splitMarkdownFence: Command = ({ state, dispatch }) => {

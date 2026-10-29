@@ -90,6 +90,46 @@ test('an additional backtick skips a completed triple closer without duplicating
   expect(view.state.selection.main.head).toBe(6);
 });
 
+test.each(['正文 ', '# 标题\n\n正文 ', '> 引用 ', '- 列表项 '])(
+  'three backticks complete and skip a triple pair after existing text: %j',
+  (prefix) => {
+    const view = editor(prefix);
+    view.dispatch({ selection: { anchor: prefix.length } });
+    for (let i = 0; i < 3; i++) type(view, '`');
+    expect(view.state.doc.toString()).toBe(prefix + '``````');
+    expect(view.state.selection.main.head).toBe(prefix.length + 3);
+    type(view, '`');
+    expect(view.state.doc.toString()).toBe(prefix + '``````');
+    expect(view.state.selection.main.head).toBe(prefix.length + 6);
+  },
+);
+
+test('triple completion after text preserves all cursor and closing-bracket positions', () => {
+  const view = editor('正文 \n\n说明 ');
+  view.dispatch({ selection: EditorSelection.create([EditorSelection.cursor(3), EditorSelection.cursor(8)]) });
+  for (let i = 0; i < 3; i++) type(view, '`');
+  expect(view.state.doc.toString()).toBe('正文 ``````\n\n说明 ``````');
+  expect(view.state.selection.ranges.map((range) => range.head)).toEqual([6, 17]);
+  type(view, '`');
+  expect(view.state.doc.toString()).toBe('正文 ``````\n\n说明 ``````');
+  expect(view.state.selection.ranges.map((range) => range.head)).toEqual([9, 20]);
+  undo(view);
+  expect(view.state.doc.toString()).toBe('正文 \n\n说明 ');
+  redo(view);
+  expect(view.state.doc.toString()).toBe('正文 ``````\n\n说明 ``````');
+});
+
+test('mixed empty-line and text-prefix cursors map both native and promoted triples', () => {
+  const view = editor('\n\n正文 ');
+  view.dispatch({ selection: EditorSelection.create([EditorSelection.cursor(0), EditorSelection.cursor(5)]) });
+  for (let i = 0; i < 3; i++) type(view, '`');
+  expect(view.state.doc.toString()).toBe('``````\n\n正文 ``````');
+  expect(view.state.selection.ranges.map((range) => range.head)).toEqual([3, 14]);
+  type(view, '`');
+  expect(view.state.doc.toString()).toBe('``````\n\n正文 ``````');
+  expect(view.state.selection.ranges.map((range) => range.head)).toEqual([6, 17]);
+});
+
 test('fence expansion preserves up to three spaces of Markdown indentation', () => {
   const view = editor('  ');
   view.dispatch({ selection: { anchor: 2 } });
