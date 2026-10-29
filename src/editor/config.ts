@@ -1,5 +1,5 @@
-import type { Extension } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorSelection, Prec, type Extension } from '@codemirror/state';
+import { EditorView, keymap, type Command } from '@codemirror/view';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { markdown } from '@codemirror/lang-markdown';
@@ -23,9 +23,39 @@ export function editorAppearance(night: boolean): Extension {
 }
 export function languageFor(format: NoteFormat, size: number): Extension {
   const display = displayFormatFor(format, size);
-  return display === 'json' ? json() : display === 'markdown' ? markdown({ codeLanguages: languages }) : [];
+  if (display === 'json') return json();
+  if (display !== 'markdown') return [];
+  const support = markdown({ codeLanguages: languages });
+  return [
+    support,
+    support.language.data.of({ closeBrackets: { brackets: ['(', '[', '{', "'", '"', '`', '```'] } }),
+    Prec.highest(keymap.of([{ key: 'Enter', run: splitMarkdownFence }])),
+  ];
 }
 
+// Expand a paired fence on Enter, keeping an optional language label on its opening line.
+export const splitMarkdownFence: Command = ({ state, dispatch }) => {
+  if (state.readOnly) return false;
+  const matches = state.selection.ranges.map((range) => {
+    if (!range.empty) return null;
+    const line = state.doc.lineAt(range.head);
+    const opening = /^( {0,3})```[^`]*$/.exec(state.sliceDoc(line.from, range.head));
+    return opening && state.sliceDoc(range.head, line.to) === '```' ? opening[1] : null;
+  });
+  if (matches.some((match) => match === null)) return false;
+  let index = 0;
+  dispatch(
+    state.update(
+      state.changeByRange((range) => {
+        const indent = matches[index++]!;
+        const insert = state.lineBreak + indent + state.lineBreak + indent;
+        return { changes: { from: range.head, insert }, range: EditorSelection.cursor(range.head + 1 + indent.length) };
+      }),
+      { scrollIntoView: true, userEvent: 'input.type' },
+    ),
+  );
+  return true;
+};
 export const editorPhrases = {
   Find: '查找',
   Replace: '替换',
