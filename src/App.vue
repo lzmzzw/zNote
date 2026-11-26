@@ -4,7 +4,7 @@ import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch, nextTick 
 import { EditorState, Compartment } from '@codemirror/state';
 import { multipleSelection } from './editor/multi-selection';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, undo, redo } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { bracketMatching } from '@codemirror/language';
@@ -909,6 +909,11 @@ async function openFile() {
     busy.value = false;
   }
 }
+function isUnusedStartupTab(note: Note) {
+  return note.path === null && note.name === '未命名1.txt' && note.format === 'txt' &&
+    !note.dirty && !note.metaDirty && !note.state.doc.length &&
+    undoDepth(note.state) === 0 && redoDepth(note.state) === 0;
+}
 async function openAssociatedFiles() {
   if (closingWindow.value) return;
   if (openingAssociated) {
@@ -929,7 +934,10 @@ async function openAssociatedFiles() {
           existing.readOnly = doc.readOnly;
           selectNote(existing);
         } else {
+          const placeholder = notes.value.length === 1 && !closePrompt.value && !busy.value ? notes.value[0] : undefined;
+          const replacePlaceholder = placeholder && isUnusedStartupTab(placeholder);
           createNote(doc);
+          if (replacePlaceholder) removeNote(placeholder);
         }
       }
       if (result.errors.length) status.value = `打开文件失败：${result.errors.join('；')}`;

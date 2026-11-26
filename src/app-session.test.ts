@@ -13,6 +13,7 @@ const bridge = vi.hoisted(() => ({
   fail: false,
   open: null as unknown,
   requests: [] as unknown[],
+  associatedOpen: undefined as undefined | (() => void),
   saveArgs: null as unknown,
   readOnly: {} as Record<string, boolean>,
   writableArgs: null as unknown,
@@ -66,6 +67,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 vi.mock('@tauri-apps/api/event', () => ({
   listen: async (name: string, handler: (event: { payload: string }) => void) => {
     if (name === 'native-menu-action') bridge.menu = handler;
+    if (name === 'associated-file-open') bridge.associatedOpen = () => handler({ payload: '' });
     return () => {};
   },
 }));
@@ -940,6 +942,19 @@ describe('session lifecycle', () => {
     await nextTick();
     expect(root.querySelector('.tab.active')?.textContent).toContain('a.txt');
   });
+  it.each(['blank', 'draft', 'undo history', 'multiple tabs'])('opens an associated file in a running window: %s', async (scenario) => {
+    await mount();
+    if (scenario === 'multiple tabs') key('n');
+    if (scenario === 'draft' || scenario === 'undo history') {
+      editor().dispatch({ changes: { from: 0, insert: 'draft' } });
+      if (scenario === 'undo history') undo(editor());
+    }
+    bridge.requests.push({ path: 'C:/external.txt', text: 'external', encoding: 'UTF-8', bom: false, lineEnding: 'LF', revision: 'rev', readOnly: false });
+    bridge.associatedOpen!();
+    await vi.waitFor(() => expect(root.querySelector('.tab.active')?.textContent).toContain('external.txt'));
+    expect(editor().state.doc.toString()).toBe('external');
+    expect(root.querySelectorAll('[role="tab"]')).toHaveLength(scenario === 'blank' ? 1 : scenario === 'multiple tabs' ? 3 : 2);
+  });
   it('shows associated files of every format as saved until their content changes', async () => {
     bridge.requests = ['txt', 'md', 'json', 'csv'].map((extension) => ({
       path: `C:/sample.${extension}`,
@@ -950,6 +965,7 @@ describe('session lifecycle', () => {
       revision: 'revision',
     }));
     await mount();
+    expect(root.querySelectorAll('[role="tab"]')).toHaveLength(4);
     for (const extension of ['txt', 'md', 'json', 'csv']) {
       expect(root.querySelector(`[role="tab"][aria-label="sample.${extension}，已保存"]`)).not.toBeNull();
     }
